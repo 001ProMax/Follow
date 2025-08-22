@@ -1,27 +1,29 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
-import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
+import type { env as EnvType } from "@follow/shared/env.desktop"
 import legacy from "@vitejs/plugin-legacy"
 import { minify as htmlMinify } from "html-minifier-terser"
 import { cyan, dim, green } from "kolorist"
 import { parseHTML } from "linkedom"
+import { resolve } from "pathe"
 import type { PluginOption, ResolvedConfig, ViteDevServer } from "vite"
 import { defineConfig, loadEnv } from "vite"
 import { analyzer } from "vite-bundle-analyzer"
 import mkcert from "vite-plugin-mkcert"
 import { VitePWA } from "vite-plugin-pwa"
+import { routeBuilderPlugin } from "vite-plugin-route-builder"
 
-import type { env as EnvType } from "../../packages/shared/src/env"
 import { viteRenderBaseConfig } from "./configs/vite.render.config"
 import { createDependencyChunksPlugin } from "./plugins/vite/deps"
 import { htmlInjectPlugin } from "./plugins/vite/html-inject"
+import { localesPlugin } from "./plugins/vite/locales"
 import manifestPlugin from "./plugins/vite/manifest"
 import { createPlatformSpecificImportPlugin } from "./plugins/vite/specific-import"
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url))
 const isCI = process.env.CI === "true" || process.env.CI === "1"
-const ROOT = "./src/renderer"
+const ROOT = resolve(__dirname, "./layer/renderer")
 
 const devPrint = (): PluginOption => ({
   name: "dev-print",
@@ -30,9 +32,7 @@ const devPrint = (): PluginOption => ({
     server.printUrls = () => {
       _printUrls()
       console.info(
-        `  ${green("➜")}  ${dim("Production debug")}: ${cyan(
-          "https://app.follow.is/__debug_proxy",
-        )}`,
+        `  ${green("➜")}  ${dim("Production debug")}: ${cyan("https://app.folo.is/__debug_proxy")}`,
       )
       console.info(
         `  ${green("➜")}  ${dim("Development debug")}: ${cyan(
@@ -46,6 +46,43 @@ const devPrint = (): PluginOption => ({
 const isWebBuild = process.env.WEB_BUILD === "1"
 // eslint-disable-next-line no-console
 console.log(green("Build type:"), isWebBuild ? "Web" : "Unknown")
+
+const proxyConfig = {
+  target: "http://localhost:2234",
+  changeOrigin: true,
+  selfHandleResponse: true,
+  configure: (proxy, _options) => {
+    proxy.on("proxyRes", (proxyRes, req, res) => {
+      const body = [] as any[]
+      proxyRes.on("data", (chunk: any) => body.push(chunk))
+      proxyRes.on("end", () => {
+        const html = parseHTML(Buffer.concat(body).toString())
+        const doc = html.document
+
+        const $scripts = doc.querySelectorAll("script")
+        $scripts.forEach((script) => {
+          const src = script.getAttribute("src")
+          if (src) {
+            script.setAttribute("src", `http://localhost:2234${src}`)
+          }
+        })
+
+        const $links = doc.querySelectorAll("link")
+        $links.forEach((link) => {
+          const href = link.getAttribute("href")
+          if (href) {
+            link.setAttribute("href", `http://localhost:2234${href}`)
+          }
+        })
+
+        res.setHeader("Content-Type", "text/html; charset=utf-8")
+
+        const modifiedHtml = doc.toString()
+        res.end(modifiedHtml)
+      })
+    })
+  },
+}
 
 export default ({ mode }) => {
   const env = loadEnv(mode, process.cwd())
@@ -67,48 +104,18 @@ export default ({ mode }) => {
       },
     },
     server: {
+      host: true,
       port: 2233,
       watch: {
         ignored: ["**/dist/**", "**/out/**", "**/public/**", ".git/**"],
       },
       cors: true,
       proxy: {
-        "/login": {
-          target: "http://localhost:2234",
-          changeOrigin: true,
-          selfHandleResponse: true,
-          configure: (proxy, _options) => {
-            proxy.on("proxyRes", (proxyRes, req, res) => {
-              const body = [] as any[]
-              proxyRes.on("data", (chunk: any) => body.push(chunk))
-              proxyRes.on("end", () => {
-                const html = parseHTML(Buffer.concat(body).toString())
-                const doc = html.document
-
-                const $scripts = doc.querySelectorAll("script")
-                $scripts.forEach((script) => {
-                  const src = script.getAttribute("src")
-                  if (src) {
-                    script.setAttribute("src", `http://localhost:2234${src}`)
-                  }
-                })
-
-                const $links = doc.querySelectorAll("link")
-                $links.forEach((link) => {
-                  const href = link.getAttribute("href")
-                  if (href) {
-                    link.setAttribute("href", `http://localhost:2234${href}`)
-                  }
-                })
-
-                res.setHeader("Content-Type", "text/html; charset=utf-8")
-
-                const modifiedHtml = doc.toString()
-                res.end(modifiedHtml)
-              })
-            })
-          },
-        },
+        "/login": proxyConfig,
+        "/forget-password": proxyConfig,
+        "/reset-password": proxyConfig,
+        "/register": proxyConfig,
+        "/share": proxyConfig,
 
         ...(env.VITE_DEV_PROXY
           ? {
@@ -124,11 +131,18 @@ export default ({ mode }) => {
     resolve: {
       alias: {
         ...viteRenderBaseConfig.resolve?.alias,
-        "@follow/logger": resolve(__dirname, "../../packages/logger/web.ts"),
+        "@follow/logger": resolve(__dirname, "../../packages/internal/logger/web.ts"),
       },
     },
     plugins: [
       ...((viteRenderBaseConfig.plugins ?? []) as any),
+
+      routeBuilderPlugin({
+        pagePattern: "src/pages/**/*.tsx",
+        outputPath: "src/generated-routes.ts",
+        enableInDev: true,
+      }),
+      localesPlugin(),
       isWebBuild &&
         VitePWA({
           strategies: "injectManifest",
@@ -160,7 +174,7 @@ export default ({ mode }) => {
 
           manifest: {
             theme_color: "#000000",
-            name: "Follow",
+            name: "Folo",
             display: "standalone",
             background_color: "#ffffff",
             icons: [
@@ -213,7 +227,7 @@ export default ({ mode }) => {
         ["react", "react-dom"],
         ["react-error-boundary", "react-dom/server", "react-router"],
         // Data Statement
-        ["zustand", "jotai", "use-context-selector", "immer", "dexie"],
+        ["zustand", "jotai", "use-context-selector", "immer"],
         // Remark
         [
           "remark-directive",
@@ -236,7 +250,7 @@ export default ({ mode }) => {
         ],
         ["vfile", "unified"],
         ["es-toolkit/compat"],
-        ["framer-motion"],
+        ["motion/react"],
         ["clsx", "tailwind-merge", "class-variance-authority"],
 
         [
@@ -289,10 +303,10 @@ export default ({ mode }) => {
 function checkBrowserSupport() {
   if (!("findLastIndex" in Array.prototype) || !("structuredClone" in window)) {
     window.alert(
-      "Follow is not compatible with your browser because your browser version is too old. You can download and use the Follow app or continue using it with the latest browser.",
+      "Folo is not compatible with your browser because your browser version is too old. You can download and use the Folo app or continue using it with the latest browser.",
     )
 
-    window.location.href = "https://follow.is/download"
+    window.location.href = "https://folo.is/download"
   }
 }
 

@@ -1,22 +1,24 @@
-import type { UISettings } from "@/src/interfaces/settings/ui"
+import { defaultUISettings } from "@follow/shared/settings/defaults"
+import type { UISettings as BaseUISettings } from "@follow/shared/settings/interface"
+
+import { getDeviceLanguage } from "@/src/lib/i18n"
 
 import { createSettingAtom } from "./internal/helper"
 
+export interface UISettings extends BaseUISettings {
+  fontScale: number
+  useSystemFontScaling: boolean
+  useDifferentFontSizeForContent: boolean
+  mobileContentFontSize: number
+}
 export const createDefaultSettings = (): UISettings => ({
-  // Subscription
+  ...defaultUISettings,
+  discoverLanguage: getDeviceLanguage().startsWith("zh") ? "all" : "eng",
 
-  hideExtraBadge: false,
-
-  subscriptionShowUnreadCount: true,
-  thumbnailRatio: "square",
-
-  // Content
-  readerRenderInlineStyle: false,
-  codeHighlightThemeLight: "github-light",
-  codeHighlightThemeDark: "github-dark",
-  guessCodeLanguage: true,
-  hideRecentReader: false,
-  customCSS: "",
+  fontScale: 1,
+  useSystemFontScaling: true,
+  useDifferentFontSizeForContent: false,
+  mobileContentFontSize: 16,
 })
 
 export const {
@@ -30,3 +32,12 @@ export const {
   useSettingValue: useUISettingValue,
   settingAtom: __uiSettingAtom,
 } = createSettingAtom("ui", createDefaultSettings)
+
+export const uiServerSyncWhiteListKeys: (keyof UISettings)[] = [
+  "uiFontFamily",
+  "readerFontFamily",
+  "opaqueSidebar",
+  "fontScale",
+  "useSystemFontScaling",
+  // "customCSS",
+]

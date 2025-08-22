@@ -1,9 +1,8 @@
 // @ts-check
-import path from "node:path"
-
 import { fixupPluginRules } from "@eslint/compat"
 import { defineConfig } from "eslint-config-hyoban"
 import reactNative from "eslint-plugin-react-native"
+import path from "pathe"
 
 import checkI18nJson from "./plugins/eslint/eslint-check-i18n-json.js"
 import noDebug from "./plugins/eslint/eslint-no-debug.js"
@@ -15,14 +14,13 @@ export default defineConfig(
     formatting: false,
     lessOpinionated: true,
     ignores: [
-      "src/renderer/src/hono.ts",
-      "src/hono.ts",
-      "packages/shared/src/hono.ts",
+      "packages/internal/shared/src/hono.ts",
       "resources/**",
       "apps/mobile/android/**",
       "apps/mobile/ios/**",
       "apps/mobile/.expo",
       "apps/mobile/native/build/**",
+      "**/generated-routes.ts",
     ],
     preferESM: false,
     tailwindCSS: {
@@ -42,8 +40,11 @@ export default defineConfig(
       "no-debug/no-debug-stack": "error",
       "@eslint-react/no-clone-element": 0,
       "@eslint-react/hooks-extra/no-direct-set-state-in-use-effect": 0,
+      "@eslint-react/dom/no-flush-sync": 1,
+      "@eslint-react/hooks-extra/no-unnecessary-use-callback": "warn",
       // NOTE: Disable this temporarily
       "react-compiler/react-compiler": 0,
+      "unicorn/no-array-callback-reference": 0,
       "no-restricted-syntax": 0,
       "no-restricted-globals": [
         "error",
@@ -105,8 +106,26 @@ export default defineConfig(
       "package-json-extend": packageJsonExtend,
     },
     rules: {
-      "package-json-extend/ensure-package-version": "warn",
+      "package-json-extend/ensure-package-version": "error",
       "package-json-extend/no-duplicate-package": "error",
+      "package-json/require-type": 0,
+    },
+  },
+  {
+    files: ["**/*.{js,ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "node:path",
+              message:
+                "For better cross-platform compatibility, please use 'pathe' instead of 'node:path'",
+            },
+          ],
+        },
+      ],
     },
   },
   {

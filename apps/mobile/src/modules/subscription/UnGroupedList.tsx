@@ -1,27 +1,31 @@
+import { useSortedUngroupedSubscription } from "@follow/store/subscription/hooks"
 import type { FC } from "react"
-import { View } from "react-native"
 
-import { useSortedUngroupedSubscription } from "@/src/store/subscription/hooks"
+import { useHideAllReadSubscriptions } from "@/src/atoms/settings/general"
 
 import { useFeedListSortMethod, useFeedListSortOrder } from "./atoms"
 import { SubscriptionItem } from "./items/SubscriptionItem"
-import { ItemSeparator } from "./ItemSeparator"
 
 export const UnGroupedList: FC<{
   subscriptionIds: string[]
-}> = ({ subscriptionIds }) => {
+  isLastGroup?: boolean
+}> = ({ subscriptionIds, isLastGroup }) => {
   const sortBy = useFeedListSortMethod()
   const sortOrder = useFeedListSortOrder()
-  const sortedSubscriptionIds = useSortedUngroupedSubscription(subscriptionIds, sortBy, sortOrder)
+  const hideAllReadSubscriptions = useHideAllReadSubscriptions()
+  const sortedSubscriptionIds = useSortedUngroupedSubscription({
+    ids: subscriptionIds,
+    sortBy,
+    sortOrder,
+    hideAllReadSubscriptions,
+  })
 
-  return (
-    <View>
-      {sortedSubscriptionIds.map((id, index) => (
-        <View key={id}>
-          <SubscriptionItem key={id} id={id} />
-          {index !== sortedSubscriptionIds.length - 1 && <ItemSeparator />}
-        </View>
-      ))}
-    </View>
-  )
+  return sortedSubscriptionIds.map((id, index) => (
+    <SubscriptionItem
+      key={id}
+      id={id}
+      isFirst={false}
+      isLast={!!isLastGroup && index === sortedSubscriptionIds.length - 1}
+    />
+  ))
 }

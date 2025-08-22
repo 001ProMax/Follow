@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto"
 import fs from "node:fs/promises"
-import path from "node:path"
 
 import fg from "fast-glob"
+import path from "pathe"
 
 export async function calculateMainHash(mainDir: string): Promise<string> {
   // Get all TypeScript files in the main directory recursively
@@ -29,7 +29,7 @@ export async function calculateMainHash(mainDir: string): Promise<string> {
 }
 
 async function main() {
-  const hash = await calculateMainHash(path.resolve(process.cwd(), "src/main"))
+  const hash = await calculateMainHash(path.resolve(process.cwd(), "layer/main"))
 
   const packageJson = JSON.parse(
     await fs.readFile(path.resolve(process.cwd(), "package.json"), "utf-8"),

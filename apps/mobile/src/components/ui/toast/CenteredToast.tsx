@@ -1,7 +1,9 @@
 import { withOpacity } from "@follow/utils"
-import { createElement, useContext, useEffect, useState } from "react"
-import { StyleSheet, Text, View } from "react-native"
+import { createElement, use, useEffect, useState } from "react"
+import { StyleSheet, View } from "react-native"
 import Animated, { FadeOut } from "react-native-reanimated"
+
+import { Text } from "@/src/components/ui/typography/Text"
 
 import { toastTypeToIcons } from "./constants"
 import { ToastActionContext } from "./ctx"
@@ -11,10 +13,10 @@ export const CenteredToast = (props: ToastProps) => {
   const renderMessage = props.render ? null : props.message ? (
     <Text className="font-semibold text-white">{props.message}</Text>
   ) : null
-  const { register } = useContext(ToastActionContext)
+  const { register } = use(ToastActionContext)
   useEffect(() => {
     const disposer = register(props.currentIndex, {
-      dimiss: async () => {},
+      dismiss: async () => {},
     })
     return () => {
       disposer()
@@ -32,7 +34,6 @@ export const CenteredToast = (props: ToastProps) => {
             })}
           </View>
         ))
-
   const [measureHeight, setMeasureHeight] = useState(-1)
   return (
     <Animated.View
@@ -51,7 +52,6 @@ export const CenteredToast = (props: ToastProps) => {
     </Animated.View>
   )
 }
-
 const styles = StyleSheet.create({
   toast: {
     borderWidth: StyleSheet.hairlineWidth,
@@ -59,11 +59,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     alignItems: "center",
-
     borderColor: withOpacity("#ffffff", 0.3),
     backgroundColor: withOpacity("#000000", 0.9),
   },
-
   hidden: {
     opacity: 0,
   },

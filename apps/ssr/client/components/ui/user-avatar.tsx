@@ -1,5 +1,6 @@
 import { useWhoami } from "@client/atoms/user"
 import { Avatar, AvatarFallback, AvatarImage } from "@follow/components/ui/avatar/index.jsx"
+import { UserRole } from "@follow/constants"
 import { getBackgroundGradient } from "@follow/utils/color"
 import { cn } from "@follow/utils/utils"
 import { useMemo } from "react"
@@ -22,19 +23,24 @@ export const UserAvatar = ({ className }: { className?: string }) => {
   if (!user) {
     if (import.meta.env.DEV) {
       user = {
+        id: "1",
         name: "Innei",
         image: "https://avatars-githubusercontent-webp.webp.se/u/41265413?v=4",
+        handle: "innei",
+        role: UserRole.Free,
+        roleEndAt: new Date(),
+        deleted: false,
       }
     } else {
       return null
     }
   }
-  const { name, image } = user
+  const { name, image } = user!
 
   return (
     <div
       className={cn(
-        "flex h-20 items-center justify-center gap-8 px-10 py-4 text-2xl font-medium text-zinc-600 dark:text-zinc-300",
+        "text-text-secondary flex h-20 items-center justify-center gap-8 px-10 py-4 text-2xl font-medium",
         className,
       )}
     >
@@ -48,7 +54,7 @@ export const UserAvatar = ({ className }: { className?: string }) => {
         </AvatarFallback>
       </Avatar>
 
-      <div>{name}</div>
+      <div className="text-text truncate">{name}</div>
     </div>
   )
 }

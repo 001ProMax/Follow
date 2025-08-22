@@ -2,19 +2,8 @@
   "$schema": "https://turbo.build/schema.json",
   "envMode": "loose",
   "tasks": {
-    "Follow#build": {
-      "outputs": ["dist/**", "out/**"]
-    },
-    "Follow#build:web": {
-      "outputs": ["out/**"]
-    },
-    "Follow#build:macos": {
-      "outputs": ["dist/**", "out/**"]
-    },
-    "Follow#build:mas": {
-      "outputs": ["dist/**", "out/**"]
-    },
-    "Follow#build:render": {
+    "Folo#build:web": {
+      "dependsOn": ["@follow/legal#build"],
       "outputs": ["out/**"]
     },
     "//#format:check": {},
@@ -27,6 +16,10 @@
       "dependsOn": ["@follow/electron-main#build"]
     },
     "@follow/ssr#build": {
+      "dependsOn": ["@follow/legal#build"],
+      "outputs": ["dist/**"]
+    },
+    "build": {
       "outputs": ["dist/**"]
     },
     "dev": {

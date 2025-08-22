@@ -1,127 +1,45 @@
 import { FeedViewType } from "@follow/constants"
-import { useEffect, useMemo } from "react"
-import { Animated, StyleSheet } from "react-native"
-import PagerView from "react-native-pager-view"
+import { memo, useMemo } from "react"
 
-import { selectTimeline, useSelectedFeed, useSelectedView } from "@/src/modules/screen/atoms"
-import {
-  useEntryIdsByCategory,
-  useEntryIdsByFeedId,
-  useEntryIdsByInboxId,
-  useEntryIdsByListId,
-  useEntryIdsByView,
-} from "@/src/store/entry/hooks"
-import { useViewWithSubscription } from "@/src/store/subscription/hooks"
+import { useEntries, useSelectedFeed, useSelectedView } from "@/src/modules/screen/atoms"
+import { PagerList } from "@/src/modules/screen/PagerList"
+import { TimelineHeader } from "@/src/modules/screen/TimelineSelectorProvider"
 
-import { TimelineSelectorProvider } from "../screen/TimelineSelectorProvider"
 import { EntryListSelector } from "./EntryListSelector"
-import { usePagerView } from "./usePagerView"
 
+const renderViewItem = (view: FeedViewType, active: boolean) => (
+  <ViewEntryList key={view} viewId={view} active={active} />
+)
 export function EntryList() {
   const selectedFeed = useSelectedFeed()
-
+  const view = useSelectedView() ?? FeedViewType.Articles
   const Content = useMemo(() => {
     if (!selectedFeed) return null
     switch (selectedFeed.type) {
       case "view": {
-        return <ViewPagerList viewId={selectedFeed.viewId} />
+        return <PagerList renderItem={renderViewItem} />
       }
-      case "feed": {
-        return <FeedEntryList feedId={selectedFeed.feedId} />
-      }
-      case "category": {
-        return <CategoryEntryList categoryName={selectedFeed.categoryName} />
-      }
-      case "list": {
-        return <ListEntryList listId={selectedFeed.listId} />
-      }
-      case "inbox": {
-        return <InboxEntryList inboxId={selectedFeed.inboxId} />
+      default: {
+        return <NormalEntryList viewId={view} />
       }
     }
-  }, [selectedFeed])
+  }, [selectedFeed, view])
   if (!Content) return null
 
-  return <TimelineSelectorProvider>{Content}</TimelineSelectorProvider>
-}
-
-const AnimatedPagerView = Animated.createAnimatedComponent<typeof PagerView>(PagerView)
-
-function ViewPagerList({ viewId }: { viewId: FeedViewType }) {
-  const activeViews = useViewWithSubscription()
-  const viewIdIndex = activeViews.findIndex((view) => view.view === viewId)
-  const { page, pagerRef, ...rest } = usePagerView({
-    initialPage: viewIdIndex,
-    onIndexChange: (index) => {
-      selectTimeline({ type: "view", viewId: activeViews[index]!.view })
-    },
-  })
-
-  useEffect(() => {
-    if (page === viewIdIndex) return
-    pagerRef.current?.setPage(viewIdIndex)
-  }, [page, pagerRef, viewIdIndex])
-
   return (
-    <AnimatedPagerView
-      testID="pager-view"
-      ref={pagerRef}
-      style={styles.PagerView}
-      initialPage={page}
-      layoutDirection="ltr"
-      overdrag
-      onPageScroll={rest.onPageScroll}
-      onPageSelected={rest.onPageSelected}
-      onPageScrollStateChanged={rest.onPageScrollStateChanged}
-      pageMargin={10}
-      orientation="horizontal"
-    >
-      {useMemo(
-        () =>
-          activeViews.map((view, index) => (
-            <ViewEntryList key={view.view} viewId={view.view} active={page === index} />
-          )),
-        [activeViews, page],
-      )}
-    </AnimatedPagerView>
+    <>
+      <TimelineHeader />
+      {Content}
+    </>
   )
 }
 
-function ViewEntryList({ viewId, active }: { viewId: FeedViewType; active: boolean }) {
-  const entryIds = useEntryIdsByView(viewId)
-  return <EntryListSelector entryIds={entryIds} viewId={viewId} active={active} />
-}
+const ViewEntryList = memo(({ viewId, active }: { viewId: FeedViewType; active: boolean }) => {
+  const { entriesIds } = useEntries({ viewId, active })
+  return <EntryListSelector entryIds={entriesIds} viewId={viewId} active={active} />
+})
 
-function FeedEntryList({ feedId }: { feedId: string }) {
-  const view = useSelectedView() ?? FeedViewType.Articles
-  const entryIds = useEntryIdsByFeedId(feedId)
-  return <EntryListSelector entryIds={entryIds} viewId={view} />
-}
-
-function CategoryEntryList({ categoryName }: { categoryName: string }) {
-  const view = useSelectedView() ?? FeedViewType.Articles
-  const entryIds = useEntryIdsByCategory(categoryName)
-  return <EntryListSelector entryIds={entryIds} viewId={view} />
-}
-
-function ListEntryList({ listId }: { listId: string }) {
-  const view = useSelectedView() ?? FeedViewType.Articles
-  const entryIds = useEntryIdsByListId(listId)
-  if (!entryIds) return null
-  return <EntryListSelector entryIds={entryIds} viewId={view} />
-}
-
-function InboxEntryList({ inboxId }: { inboxId: string }) {
-  const view = useSelectedView() ?? FeedViewType.Articles
-  const entryIds = useEntryIdsByInboxId(inboxId)
-  return <EntryListSelector entryIds={entryIds} viewId={view} />
-}
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  PagerView: {
-    flex: 1,
-  },
+const NormalEntryList = memo(({ viewId }: { viewId: FeedViewType }) => {
+  const { entriesIds } = useEntries()
+  return <EntryListSelector entryIds={entriesIds} viewId={viewId} />
 })

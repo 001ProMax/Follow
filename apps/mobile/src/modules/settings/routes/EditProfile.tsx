@@ -1,65 +1,101 @@
-import { withOpacity } from "@follow/utils/src/color"
+import { useWhoami } from "@follow/store/user/hooks"
+import type { MeModel } from "@follow/store/user/store"
+import { userSyncService } from "@follow/store/user/store"
+import type { UserProfileEditable } from "@follow/store/user/types"
 import { useMutation } from "@tanstack/react-query"
-import { router } from "expo-router"
 import type { FC } from "react"
 import { useState } from "react"
+import { useTranslation } from "react-i18next"
 import {
-  ActivityIndicator,
-  Text,
+  KeyboardAvoidingView,
+  TextInput,
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
 } from "react-native"
 import { KeyboardController } from "react-native-keyboard-controller"
 
-import { RotateableLoading } from "@/src/components/common/RotateableLoading"
+import { HeaderSubmitTextButton } from "@/src/components/layouts/header/HeaderElements"
 import {
-  NavigationBlurEffectHeader,
+  NavigationBlurEffectHeaderView,
   SafeNavigationScrollView,
 } from "@/src/components/layouts/views/SafeNavigationScrollView"
 import { UserAvatar } from "@/src/components/ui/avatar/UserAvatar"
-import { UIBarButton } from "@/src/components/ui/button/UIBarButton"
 import { PlainTextField } from "@/src/components/ui/form/TextField"
 import {
   GroupedInsetListCard,
   GroupedInsetListCell,
   GroupedInsetListNavigationLink,
+  GroupedInsetListSectionHeader,
   GroupedOutlineDescription,
 } from "@/src/components/ui/grouped/GroupedList"
+import { PlatformActivityIndicator } from "@/src/components/ui/loading/PlatformActivityIndicator"
+import { Text } from "@/src/components/ui/typography/Text"
 import { CheckCircleCuteReIcon } from "@/src/icons/check_circle_cute_re"
-import { CheckLineIcon } from "@/src/icons/check_line"
 import { CloseCircleFillIcon } from "@/src/icons/close_circle_fill"
-import { apiClient } from "@/src/lib/api-fetch"
-import { pickImage } from "@/src/lib/native/picker"
+import { useNavigation } from "@/src/lib/navigation/hooks"
 import { toast } from "@/src/lib/toast"
-import { useWhoami } from "@/src/store/user/hooks"
-import type { MeModel } from "@/src/store/user/store"
-import { userSyncService } from "@/src/store/user/store"
-import type { UserProfileEditable } from "@/src/store/user/types"
-import { accentColor, useColor } from "@/src/theme/colors"
+import { EditEmailScreen } from "@/src/screens/(modal)/EditEmailScreen"
+import { accentColor } from "@/src/theme/colors"
+
+import { setAvatar } from "../utils"
 
 export const EditProfileScreen = () => {
   const whoami = useWhoami()
-
+  const { t } = useTranslation("settings")
+  const [dirtyFields, setDirtyFields] = useState<Partial<UserProfileEditable>>({})
+  const { mutateAsync: updateProfile, isPending } = useMutation({
+    mutationFn: async () => {
+      await userSyncService.updateProfile(dirtyFields)
+    },
+    onSuccess: () => {
+      toast.success("Profile updated")
+      setDirtyFields({})
+    },
+    onError: (error) => {
+      toast.error(error.message)
+    },
+  })
   if (!whoami) {
     return (
       <View className="flex-1 items-center justify-center">
-        <ActivityIndicator />
+        <PlatformActivityIndicator />
       </View>
     )
   }
-
   return (
-    <SafeNavigationScrollView className="bg-system-grouped-background">
-      <AvatarSection whoami={whoami} />
-      <ProfileForm whoami={whoami} />
-    </SafeNavigationScrollView>
+    <KeyboardAvoidingView behavior="padding" className="flex-1">
+      <SafeNavigationScrollView
+        keyboardShouldPersistTaps="handled"
+        Header={
+          <NavigationBlurEffectHeaderView
+            headerRight={
+              <HeaderSubmitTextButton
+                label={t("words.save", {
+                  ns: "common",
+                })}
+                isValid={Object.keys(dirtyFields).length > 0}
+                isLoading={isPending}
+                onPress={() => {
+                  updateProfile()
+                }}
+              />
+            }
+            title={t("profile.edit_profile")}
+          />
+        }
+        className="bg-system-grouped-background"
+      >
+        <AvatarSection whoami={whoami} />
+        <ProfileForm whoami={whoami} dirtyFields={dirtyFields} setDirtyFields={setDirtyFields} />
+      </SafeNavigationScrollView>
+    </KeyboardAvoidingView>
   )
 }
-
 const AvatarSection: FC<{
   whoami: MeModel
 }> = ({ whoami }) => {
+  const { t } = useTranslation("settings")
   return (
     <View className="mt-6 items-center justify-center">
       <UserAvatar
@@ -69,71 +105,37 @@ const AvatarSection: FC<{
         className={!whoami?.name || !whoami.image ? "bg-system-background" : ""}
       />
 
-      <TouchableOpacity
-        className="mt-2"
-        hitSlop={10}
-        onPress={async () => {
-          const result = await pickImage({
-            fileName: "avatar.jpg",
-          })
-
-          if (!result) return
-          const { formData } = result
-          const res = await apiClient.upload.avatar.$post({
-            body: {
-              file: formData,
-            },
-          })
-
-          void res
-        }}
-      >
-        <Text className="text-accent text-lg">Set Avatar</Text>
+      <TouchableOpacity className="mt-2" hitSlop={10} onPress={setAvatar}>
+        <Text className="text-accent text-lg">{t("profile.set_avatar")}</Text>
       </TouchableOpacity>
     </View>
   )
 }
-
 const ProfileForm: FC<{
   whoami: MeModel
-}> = ({ whoami }) => {
-  const [dirtyFields, setDirtyFields] = useState<Partial<UserProfileEditable>>({})
-
-  const { mutateAsync: updateProfile, isPending } = useMutation({
-    mutationFn: async () => {
-      await userSyncService.updateProfile(dirtyFields)
-    },
-    onSuccess: () => {
-      toast.success("Profile updated")
-    },
-    onError: (error) => {
-      toast.error(error.message)
-    },
-  })
-
-  const label = useColor("label")
+  dirtyFields: Partial<UserProfileEditable>
+  setDirtyFields: (dirtyFields: Partial<UserProfileEditable>) => void
+}> = ({ whoami, dirtyFields, setDirtyFields }) => {
+  const { t } = useTranslation("settings")
+  const navigation = useNavigation()
+  const socialLinkFields: (keyof NonNullable<MeModel["socialLinks"]>)[] = [
+    "twitter",
+    "github",
+    "instagram",
+    "facebook",
+    "youtube",
+    "discord",
+  ]
+  const socialCopyMap = {
+    twitter: t("profile.social.twitter", "Twitter"),
+    github: t("profile.social.github", "GitHub"),
+    instagram: t("profile.social.instagram", "Instagram"),
+    facebook: t("profile.social.facebook", "Facebook"),
+    youtube: t("profile.social.youtube", "YouTube"),
+    discord: t("profile.social.discord", "Discord"),
+  }
   return (
     <View className="mt-4">
-      <NavigationBlurEffectHeader
-        headerRight={() => (
-          <UIBarButton
-            label="Save"
-            disabled={isPending || Object.keys(dirtyFields).length === 0}
-            normalIcon={
-              isPending ? (
-                <RotateableLoading size={20} color={withOpacity(label, 0.5)} />
-              ) : (
-                <CheckLineIcon height={20} width={20} />
-              )
-            }
-            onPress={() => {
-              updateProfile()
-            }}
-          />
-        )}
-        title="Edit Profile"
-      />
-
       <TouchableWithoutFeedback
         onPress={() => {
           KeyboardController.dismiss()
@@ -142,7 +144,7 @@ const ProfileForm: FC<{
         <View className="w-full">
           <GroupedInsetListCard>
             <GroupedInsetListCell
-              label="Display Name"
+              label={t("profile.name.label")}
               leftClassName="flex-none"
               rightClassName="flex-1"
             >
@@ -153,17 +155,24 @@ const ProfileForm: FC<{
                   hitSlop={10}
                   selectionColor={accentColor}
                   onChangeText={(text) => {
-                    setDirtyFields({ ...dirtyFields, name: text })
+                    setDirtyFields({
+                      ...dirtyFields,
+                      name: text,
+                    })
                   }}
                 />
               </View>
             </GroupedInsetListCell>
           </GroupedInsetListCard>
-          <GroupedOutlineDescription description="This is the name that will be displayed to other users." />
+          <GroupedOutlineDescription description={t("profile.name.description")} />
 
           {/* User name */}
           <GroupedInsetListCard className="mt-4">
-            <GroupedInsetListCell label="Handle" leftClassName="flex-none" rightClassName="flex-1">
+            <GroupedInsetListCell
+              label={t("profile.handle.label")}
+              leftClassName="flex-none"
+              rightClassName="flex-1"
+            >
               <View className="flex-1">
                 <PlainTextField
                   className="text-secondary-label w-full flex-1 text-right"
@@ -171,20 +180,21 @@ const ProfileForm: FC<{
                   hitSlop={10}
                   selectionColor={accentColor}
                   onChangeText={(text) => {
-                    setDirtyFields({ ...dirtyFields, handle: text })
+                    setDirtyFields({
+                      ...dirtyFields,
+                      handle: text,
+                    })
                   }}
                 />
               </View>
             </GroupedInsetListCell>
           </GroupedInsetListCard>
-          <GroupedOutlineDescription description="Your handle is used to identify you on Follow." />
-
           {/* Email */}
           <GroupedInsetListCard className="mt-4">
             <GroupedInsetListNavigationLink
-              label="Email"
+              label={t("profile.email.label")}
               onPress={() => {
-                router.push("/edit-email")
+                navigation.presentControllerView(EditEmailScreen)
               }}
               leftClassName="flex-none"
               rightClassName="flex-1"
@@ -199,6 +209,93 @@ const ProfileForm: FC<{
                 </View>
               }
             />
+          </GroupedInsetListCard>
+          <GroupedOutlineDescription description={t("profile.handle.description")} />
+
+          <GroupedInsetListSectionHeader label={t("profile.bio.label", "Bio")} />
+          <GroupedInsetListCard>
+            <View className="flex-1">
+              <TextInput
+                clearButtonMode="always"
+                className="text-label h-[100px] w-full flex-1 px-4 py-3"
+                value={dirtyFields.bio ?? whoami?.bio ?? ""}
+                hitSlop={10}
+                multiline
+                selectionColor={accentColor}
+                onChangeText={(text) => {
+                  setDirtyFields({
+                    ...dirtyFields,
+                    bio: text,
+                  })
+                }}
+                textAlignVertical="top"
+                placeholder={t("profile.bio.placeholder", "Tell us about yourself")}
+              />
+            </View>
+          </GroupedInsetListCard>
+
+          {/* Website */}
+          <GroupedInsetListCard className="mt-4">
+            <GroupedInsetListCell
+              label={t("profile.website.label", "Website")}
+              leftClassName="flex-none"
+              rightClassName="flex-1"
+            >
+              <View className="flex-1">
+                <PlainTextField
+                  className="text-secondary-label w-full flex-1 text-right"
+                  value={dirtyFields.website ?? whoami?.website ?? ""}
+                  hitSlop={10}
+                  selectionColor={accentColor}
+                  onChangeText={(text) => {
+                    setDirtyFields({
+                      ...dirtyFields,
+                      website: text,
+                    })
+                  }}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="url"
+                  placeholder="https://example.com"
+                />
+              </View>
+            </GroupedInsetListCell>
+          </GroupedInsetListCard>
+
+          {/* Social Links */}
+          <GroupedInsetListSectionHeader
+            label={t("profile.social.title", "Social Media Handles")}
+          />
+          <GroupedInsetListCard>
+            {socialLinkFields.map((social) => (
+              <GroupedInsetListCell
+                key={social}
+                label={socialCopyMap[social]}
+                leftClassName="flex-none"
+                rightClassName="flex-1"
+              >
+                <View className="flex-1">
+                  <PlainTextField
+                    className="text-secondary-label w-full flex-1 text-right"
+                    value={dirtyFields.socialLinks?.[social] ?? whoami?.socialLinks?.[social] ?? ""}
+                    hitSlop={10}
+                    selectionColor={accentColor}
+                    onChangeText={(text) => {
+                      setDirtyFields({
+                        ...dirtyFields,
+                        socialLinks: {
+                          ...whoami?.socialLinks,
+                          ...dirtyFields.socialLinks,
+                          [social]: text,
+                        },
+                      })
+                    }}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+              </GroupedInsetListCell>
+            ))}
           </GroupedInsetListCard>
         </View>
       </TouchableWithoutFeedback>

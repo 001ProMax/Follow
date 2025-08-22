@@ -1,95 +1,105 @@
 import { clsx } from "@follow/utils"
-import { requireNativeView } from "expo"
-import { useAtom, useAtomValue } from "jotai"
+import { EventBus } from "@follow/utils/event-bus"
+import { Portal } from "@gorhom/portal"
+import { useAtom } from "jotai"
 import * as React from "react"
-import { useEffect } from "react"
-import type { ViewProps } from "react-native"
-import { ActivityIndicator, TouchableOpacity, View } from "react-native"
+import { useCallback, useEffect } from "react"
+import { TouchableOpacity, View } from "react-native"
+import { runOnJS, runOnUI } from "react-native-reanimated"
+import TrackPlayer from "react-native-track-player"
 
-import { useUISettingKey } from "@/src/atoms/settings/ui"
 import { BugCuteReIcon } from "@/src/icons/bug_cute_re"
-import { useEntryContentContext } from "@/src/modules/entry-content/ctx"
-import type { EntryModel } from "@/src/store/entry/types"
+import { player } from "@/src/lib/player"
 
-import { Portal } from "../../ui/portal"
+import { useLightboxControls } from "../../ui/lightbox/lightboxState"
+import { PlatformActivityIndicator } from "../../ui/loading/PlatformActivityIndicator"
 import { sharedWebViewHeightAtom } from "./atom"
-import { htmlUrl } from "./constants"
-import { prepareEntryRenderWebView, SharedWebViewModule } from "./index"
-
-const NativeView: React.ComponentType<
-  ViewProps & {
-    onContentHeightChange?: (e: { nativeEvent: { height: number } }) => void
-    url?: string
-  }
-> = requireNativeView("FOSharedWebView")
+import { useWebViewEntry, useWebViewMode } from "./hooks"
+import type { AudioSeekEvent } from "./index"
+import { prepareEntryRenderWebView } from "./index"
+import { NativeWebView } from "./native-webview"
+import { WebViewManager } from "./webview-manager"
 
 type EntryContentWebViewProps = {
-  entry: EntryModel
+  entryId: string
   noMedia?: boolean
+  showReadability?: boolean
+  showTranslation?: boolean
 }
 
-const setCodeTheme = (light: string, dark: string) => {
-  SharedWebViewModule.evaluateJavaScript(
-    `setCodeTheme(${JSON.stringify(light)}, ${JSON.stringify(dark)})`,
-  )
-}
-
-const setWebViewEntry = (entry: EntryModel) => {
-  SharedWebViewModule.evaluateJavaScript(
-    `setEntry(JSON.parse(${JSON.stringify(JSON.stringify(entry))}))`,
-  )
-}
-export { setWebViewEntry as preloadWebViewEntry }
-
-const setNoMedia = (value: boolean) => {
-  SharedWebViewModule.evaluateJavaScript(`setNoMedia(${value})`)
-}
-
-const setReaderRenderInlineStyle = (value: boolean) => {
-  SharedWebViewModule.evaluateJavaScript(`setReaderRenderInlineStyle(${value})`)
-}
-
-const setShowSource = (value: boolean) => {
-  SharedWebViewModule.evaluateJavaScript(`setShowSource(${value})`)
-}
+// Export for backward compatibility
 
 export function EntryContentWebView(props: EntryContentWebViewProps) {
-  const { showSourceAtom } = useEntryContentContext()
-  const showSource = useAtomValue(showSourceAtom)
-  useEffect(() => {
-    setShowSource(!!showSource)
-  }, [showSource])
-
   const [contentHeight, setContentHeight] = useAtom(sharedWebViewHeightAtom)
+  const { openLightbox } = useLightboxControls()
 
-  const codeThemeLight = useUISettingKey("codeHighlightThemeLight")
-  const codeThemeDark = useUISettingKey("codeHighlightThemeDark")
-  const readerRenderInlineStyle = useUISettingKey("readerRenderInlineStyle")
-  const { entry, noMedia } = props
+  // Use custom hooks for WebView management
+  const { entryInWebview, isLoading } = useWebViewEntry(props)
+  const { handleModeSwitch, mode } = useWebViewMode()
 
-  const [mode, setMode] = React.useState<"normal" | "debug">("normal")
+  const handleSeekAudio = useCallback(
+    async (e: AudioSeekEvent) => {
+      const activeTrack = await TrackPlayer.getActiveTrack()
+      const entryAudio = entryInWebview?.attachments?.find((attachment) =>
+        attachment.mime_type?.startsWith("audio/"),
+      )
+      if (!entryAudio) {
+        console.warn("Failed to seek audio! No audio attachment found")
+        return
+      }
+      if (activeTrack?.url !== entryAudio.url) {
+        await player.play({
+          url: entryAudio.url || "",
+          title: entryInWebview?.title || "Unknown Title",
+          artist: entryInWebview?.author || "Unknown Artist",
+        })
+      }
+      await player.seekTo(e.time)
+    },
+    [entryInWebview?.attachments, entryInWebview?.author, entryInWebview?.title],
+  )
 
+  // Handle audio seek events
   useEffect(() => {
-    setNoMedia(!!noMedia)
-  }, [noMedia, mode])
+    return EventBus.subscribe("SEEK_AUDIO", (event) => {
+      handleSeekAudio(event)
+    })
+  }, [handleSeekAudio])
 
+  // Handle image preview events
   useEffect(() => {
-    setReaderRenderInlineStyle(readerRenderInlineStyle)
-  }, [readerRenderInlineStyle, mode])
+    return EventBus.subscribe("PREVIEW_IMAGE", (event) => {
+      const { imageUrls, index } = event
 
-  useEffect(() => {
-    setCodeTheme(codeThemeLight, codeThemeDark)
-  }, [codeThemeLight, codeThemeDark, mode])
+      runOnUI(() => {
+        "worklet"
+        runOnJS(openLightbox)({
+          images: imageUrls.map((url: string) => ({
+            uri: url,
+            dimensions: null,
+            thumbUri: url,
+            thumbDimensions: null,
+            thumbRect: null,
+            type: "image",
+          })),
+          index,
+        })
+      })()
+    })
+  }, [openLightbox])
 
-  useEffect(() => {
-    setWebViewEntry(entry)
-  }, [entry])
-
+  // Initialize WebView once
   const onceRef = React.useRef(false)
   if (!onceRef.current) {
     onceRef.current = true
     prepareEntryRenderWebView()
   }
+
+  const handleModeToggle = React.useCallback(() => {
+    const nextMode = mode === "debug" ? "normal" : "debug"
+
+    handleModeSwitch(nextMode)
+  }, [mode, handleModeSwitch])
 
   return (
     <>
@@ -97,20 +107,21 @@ export function EntryContentWebView(props: EntryContentWebViewProps) {
         key={mode}
         style={{ height: contentHeight, transform: [{ translateY: 0 }] }}
         onLayout={() => {
-          setWebViewEntry(entry)
+          WebViewManager.setEntry(entryInWebview)
         }}
       >
-        <NativeView
+        <NativeWebView
           onContentHeightChange={(e) => {
             setContentHeight(e.nativeEvent.height)
           }}
+          onSeekAudio={handleSeekAudio}
         />
       </View>
 
       <Portal>
-        {(showSource ? !entry.sourceContent : !entry.content) && (
+        {isLoading && (
           <View className="absolute inset-0 items-center justify-center">
-            <ActivityIndicator />
+            <PlatformActivityIndicator />
           </View>
         )}
       </Portal>
@@ -122,15 +133,7 @@ export function EntryContentWebView(props: EntryContentWebViewProps) {
                 "flex size-12 items-center justify-center rounded-full",
                 mode === "debug" ? "bg-yellow" : "bg-red",
               )}
-              onPress={() => {
-                const nextMode = mode === "debug" ? "normal" : "debug"
-                setMode(nextMode)
-                if (nextMode === "debug") {
-                  SharedWebViewModule.load("http://localhost:5173/")
-                } else {
-                  SharedWebViewModule.load(htmlUrl)
-                }
-              }}
+              onPress={handleModeToggle}
             >
               <BugCuteReIcon color="#fff" />
             </TouchableOpacity>
@@ -140,3 +143,5 @@ export function EntryContentWebView(props: EntryContentWebViewProps) {
     </>
   )
 }
+
+export { preloadWebViewEntry } from "./webview-manager"

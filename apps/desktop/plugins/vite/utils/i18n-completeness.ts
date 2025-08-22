@@ -1,6 +1,7 @@
 import fs from "node:fs"
-import path, { dirname } from "node:path"
 import { fileURLToPath } from "node:url"
+
+import path, { dirname } from "pathe"
 
 type LanguageCompletion = Record<string, number>
 
@@ -49,7 +50,7 @@ function calculateCompleteness(localesDir: string): LanguageCompletion {
 
   languages.forEach((lang) => {
     if (lang !== "en") {
-      const percent = Math.round((keyCount[lang]! / enCount) * 100)
+      const percent = Math.floor((keyCount[lang]! / enCount) * 100)
       completeness[lang] = percent
     }
   })
@@ -58,5 +59,5 @@ function calculateCompleteness(localesDir: string): LanguageCompletion {
 }
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-const i18n = calculateCompleteness(path.resolve(__dirname, "../../../locales"))
+const i18n = calculateCompleteness(path.resolve(__dirname, "../../../../../locales"))
 export default i18n

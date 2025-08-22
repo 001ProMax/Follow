@@ -1,28 +1,43 @@
+import { extendConfig } from "@follow/configs/tailwindcss/web"
 import plugin from "tailwindcss/plugin"
-import resolveConfig from "tailwindcss/resolveConfig"
 
-import { baseTwConfig } from "../../configs/tailwind.base.config"
-
-const isWebBuild = !!process.env.WEB_BUILD || !!process.env.RN_BUILD || !!process.env.VERCEL
-
-export default resolveConfig({
-  ...baseTwConfig,
+export default extendConfig({
   content: [
-    "./src/renderer/src/**/*.{ts,tsx}",
+    "./layer/renderer/src/**/*.{ts,tsx}",
     "./apps/web/src/**/*.{ts,tsx}",
 
-    "./src/renderer/index.html",
+    "./layer/renderer/index.html",
     "./apps/web/index.html",
     "../../packages/**/*.{ts,tsx}",
     "!../../packages/**/node_modules",
   ],
-  future: {
-    hoverOnlyWhenSupported: isWebBuild,
-  },
+
+  safelist: [
+    "line-clamp-[1]",
+    "line-clamp-[2]",
+    "line-clamp-[3]",
+    "line-clamp-[4]",
+    "line-clamp-[5]",
+    "line-clamp-[6]",
+    "line-clamp-[7]",
+    "line-clamp-[8]",
+  ],
   theme: {
-    ...baseTwConfig.theme,
     extend: {
-      ...baseTwConfig.theme?.extend,
+      cursor: {
+        button: "var(--cursor-button)",
+        select: "var(--cursor-select)",
+        checkbox: "var(--cursor-checkbox)",
+        link: "var(--cursor-link)",
+        menu: "var(--cursor-menu)",
+        radio: "var(--cursor-radio)",
+        switch: "var(--cursor-switch)",
+        card: "var(--cursor-card)",
+      },
+
+      width: {
+        "feed-col": "var(--fo-feed-col-w)",
+      },
       spacing: {
         "safe-inset-top": "var(--fo-window-padding-top, 0)",
         "margin-macos-traffic-light-x": "var(--fo-macos-traffic-light-width, 0)",
@@ -32,10 +47,55 @@ export default resolveConfig({
       height: {
         screen: "100svh",
       },
+      colors: {
+        sidebar: "hsl(var(--fo-sidebar) / <alpha-value>)",
+      },
+
+      keyframes: {
+        "caret-blink": {
+          "0%,70%,100%": { opacity: "1" },
+          "20%,50%": { opacity: "0" },
+        },
+        glow: {
+          "0%, 100%": { opacity: "0.5" },
+          "50%": { opacity: "0.7" },
+        },
+        "accordion-down": {
+          from: { height: "0" },
+          to: { height: "var(--radix-accordion-content-height)" },
+        },
+        "accordion-up": {
+          from: { height: "var(--radix-accordion-content-height)" },
+          to: { height: "0" },
+        },
+        "gradient-x": {
+          "0%, 100%": {
+            backgroundPosition: "0% 50%",
+          },
+          "50%": {
+            backgroundPosition: "100% 50%",
+          },
+        },
+        shimmer: {
+          "0%": {
+            backgroundPosition: "200% 0",
+          },
+          "100%": {
+            backgroundPosition: "-200% 0",
+          },
+        },
+      },
+      animation: {
+        "caret-blink": "caret-blink 1.25s ease-out infinite",
+        "accordion-down": "accordion-down 0.2s ease-out",
+        "accordion-up": "accordion-up 0.2s ease-out",
+        "gradient-x": "gradient-x 3s linear infinite",
+        glow: "glow 1.5s ease-in-out infinite",
+        shimmer: "shimmer 2s linear infinite",
+      },
     },
   },
   plugins: [
-    ...baseTwConfig.plugins,
     plugin(({ addVariant }) => {
       addVariant("f-motion-reduce", '[data-motion-reduce="true"] &')
       addVariant("group-motion-reduce", ':merge(.group)[data-motion-reduce="true"] &')
@@ -48,7 +108,8 @@ export default resolveConfig({
       addVariant("macos", ":where(html[data-os='macOS']) &")
       addVariant("windows", ":where(html[data-os='Windows']) &")
     }),
-
+    require("tailwindcss-multi"),
+    require("tailwindcss-content-visibility"),
     plugin(({ addUtilities, matchUtilities, theme }) => {
       addUtilities({
         ".safe-inset-top": {

@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs"
-import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { sentryVitePlugin } from "@sentry/vite-plugin"
 import react from "@vitejs/plugin-react"
+import { codeInspectorPlugin } from "code-inspector-plugin"
+import { dirname, resolve } from "pathe"
 import { prerelease } from "semver"
 import type { UserConfig } from "vite"
 
@@ -11,12 +12,14 @@ import { getGitHash } from "../../../scripts/lib"
 import { astPlugin } from "../plugins/vite/ast"
 import { circularImportRefreshPlugin } from "../plugins/vite/hmr"
 import { customI18nHmrPlugin } from "../plugins/vite/i18n-hmr"
-import { localesPlugin } from "../plugins/vite/locales"
+import { localesJsonPlugin } from "../plugins/vite/locales-json"
 import i18nCompleteness from "../plugins/vite/utils/i18n-completeness"
 
 const pkgDir = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const pkg = JSON.parse(readFileSync(resolve(pkgDir, "./package.json"), "utf8"))
 const isCI = process.env.CI === "true" || process.env.CI === "1"
+const mode = process.argv.find((arg) => arg.startsWith("--mode"))?.split("=")[1]
+const isStaging = mode === "staging"
 
 const getChangelogFileContent = () => {
   const { version: pkgVersion } = pkg
@@ -29,24 +32,51 @@ const getChangelogFileContent = () => {
     return ""
   }
 }
+
 const changelogFile = getChangelogFileContent()
 export const viteRenderBaseConfig = {
+  worker: {
+    format: "es",
+  },
+  optimizeDeps: {
+    exclude: ["sqlocal", "wa-sqlite"],
+  },
   resolve: {
     alias: {
-      "~": resolve("src/renderer/src"),
+      "~": resolve("layer/renderer/src"),
       "@pkg": resolve("package.json"),
-      "@locales": resolve("locales"),
-      "@follow/electron-main": resolve("src/main/src"),
+      "@locales": resolve("../../locales"),
+      "@follow/electron-main": resolve("layer/main/src"),
     },
   },
   base: "/",
 
   plugins: [
+    {
+      name: "import-sql",
+      transform(code, id) {
+        if (id.endsWith(".sql")) {
+          const json = JSON.stringify(code)
+            .replaceAll("\u2028", "\\u2028")
+            .replaceAll("\u2029", "\\u2029")
+
+          return {
+            code: `export default ${json}`,
+          }
+        }
+      },
+    },
+    localesJsonPlugin(),
     react({
       // jsxImportSource: "@welldone-software/why-did-you-render", // <-----
     }),
     circularImportRefreshPlugin(),
 
+    codeInspectorPlugin({
+      bundler: "vite",
+      hotKeys: ["altKey"],
+      editor: "cursor",
+    }),
     sentryVitePlugin({
       org: "follow-rg",
       project: "follow",
@@ -64,18 +94,19 @@ export const viteRenderBaseConfig = {
         electron: false,
       },
       sourcemaps: {
-        filesToDeleteAfterUpload: [
-          "out/web/assets/*.js.map",
-          "out/web/vendor/*.js.map",
-          "out/rn-web/assets/*.js.map",
-          "out/rn-web/vendor/*.js.map",
-          "dist/renderer/assets/*.js.map",
-          "dist/renderer/vendor/*.css.map",
-        ],
+        filesToDeleteAfterUpload: isStaging
+          ? []
+          : [
+              "out/web/assets/*.js.map",
+              "out/web/vendor/*.js.map",
+              "out/rn-web/assets/*.js.map",
+              "out/rn-web/vendor/*.js.map",
+              "dist/renderer/assets/*.js.map",
+              "dist/renderer/vendor/*.css.map",
+            ],
       },
     }),
 
-    localesPlugin(),
     astPlugin,
     customI18nHmrPlugin(),
   ],

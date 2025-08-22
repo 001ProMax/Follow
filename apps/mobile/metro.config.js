@@ -1,6 +1,6 @@
 const { getDefaultConfig } = require("expo/metro-config")
 const { withNativeWind } = require("nativewind/metro")
-const path = require("node:path")
+const path = require("pathe")
 const { wrapWithReanimatedMetroConfig } = require("react-native-reanimated/metro-config")
 
 const config = getDefaultConfig(__dirname, { isCSSEnabled: true })
@@ -17,6 +17,13 @@ config.resolver.nodeModulesPaths = [
   path.resolve(__dirname, "./node_modules"),
   path.resolve(__dirname, "../../node_modules"),
 ]
+
+config.resolver.extraNodeModules = {
+  ...config.resolver.extraNodeModules,
+  "@locales": path.resolve(__dirname, "../../locales"),
+}
+
+config.watchFolders = [...config.watchFolders, path.resolve(__dirname, "../../locales")]
 
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   const result = context.resolveRequest(context, moduleName, platform)

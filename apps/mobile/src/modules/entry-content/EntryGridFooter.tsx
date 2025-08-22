@@ -1,75 +1,67 @@
 import { FeedViewType } from "@follow/constants"
+import { useEntry } from "@follow/store/entry/hooks"
+import { useFeedById } from "@follow/store/feed/hooks"
+import { useEntryTranslation } from "@follow/store/translation/hooks"
 import { cn } from "@follow/utils"
-import { useEffect } from "react"
-import { Text, View } from "react-native"
-import ReAnimated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated"
+import { View } from "react-native"
 
+import { useActionLanguage, useGeneralSettingKey } from "@/src/atoms/settings/general"
 import { RelativeDateTime } from "@/src/components/ui/datetime/RelativeDateTime"
 import { FeedIcon } from "@/src/components/ui/icon/feed-icon"
-import { gentleSpringPreset } from "@/src/constants/spring"
-import { useEntry } from "@/src/store/entry/hooks"
-import { useFeed } from "@/src/store/feed/hooks"
+import { Text } from "@/src/components/ui/typography/Text"
 
-import { useEntryListContextView } from "../entry-list/EntryListContext"
+import { EntryTranslation } from "../entry-list/templates/EntryTranslation"
 
 export const EntryGridFooter = ({
   entryId,
   descriptionClassName,
+  view,
 }: {
   entryId: string
   descriptionClassName?: string
+  view: FeedViewType
 }) => {
-  const entry = useEntry(entryId)
-  const feed = useFeed(entry?.feedId || "")
-  const view = useEntryListContextView()
-
-  const unreadZoomSharedValue = useSharedValue(entry?.read ? 0 : 1)
-
-  useEffect(() => {
-    if (!entry) return
-
-    if (entry.read) {
-      unreadZoomSharedValue.value = withSpring(0, gentleSpringPreset)
-    } else {
-      unreadZoomSharedValue.value = withSpring(1, gentleSpringPreset)
-    }
-  }, [entry, entry?.read, unreadZoomSharedValue])
-
-  const unreadIndicatorStyle = useAnimatedStyle(() => {
-    return {
-      width: unreadZoomSharedValue.value * 8,
-      height: unreadZoomSharedValue.value * 8,
-    }
+  const entry = useEntry(entryId, (state) => ({
+    title: state.title,
+    feedId: state.feedId,
+    publishedAt: state.publishedAt,
+    read: state.read,
+    translation: state.settings?.translation,
+  }))
+  const enableTranslation = useGeneralSettingKey("translation")
+  const actionLanguage = useActionLanguage()
+  const translation = useEntryTranslation({
+    entryId,
+    language: actionLanguage,
+    setting: enableTranslation,
   })
-
+  const feed = useFeedById(entry?.feedId || "")
   if (!entry) return null
-
   return (
-    <View className={cn("my-2 px-2", view === FeedViewType.Videos && "h-[64]")}>
-      <View className="flex-row gap-2">
-        <ReAnimated.View
-          className="bg-red mt-2 inline-block rounded-full"
-          style={unreadIndicatorStyle}
-        />
-        {entry.description && (
-          <Text
+    <View className="gap-2 px-1 py-2">
+      <View className="flex-row gap-1">
+        {!entry.read && <View className="bg-red mt-1.5 inline-block size-2 rounded-full" />}
+        {entry.title && (
+          <EntryTranslation
             numberOfLines={2}
             className={cn(
-              "text-label shrink text-base font-medium",
-              view === FeedViewType.Videos && "min-h-12",
+              "text-label shrink text-sm font-medium",
+              view === FeedViewType.Videos && "min-h-10",
               descriptionClassName,
             )}
-          >
-            {entry.description}
-          </Text>
+            source={entry.title}
+            target={translation?.title}
+            showTranslation={!!entry.translation}
+            inline
+          />
         )}
       </View>
-      <View className="mt-1 flex-row items-center gap-1">
-        <FeedIcon fallback feed={feed} size={16} />
-        <Text numberOfLines={1} className="text-label shrink text-sm font-medium">
+      <View className="flex-row items-center gap-1.5">
+        <FeedIcon fallback feed={feed} size={14} />
+        <Text numberOfLines={1} className="text-label shrink text-xs font-medium">
           {feed?.title}
         </Text>
-        <RelativeDateTime className="text-secondary-label" date={entry.publishedAt} />
+        <RelativeDateTime className="text-secondary-label text-xs" date={entry.publishedAt} />
       </View>
     </View>
   )

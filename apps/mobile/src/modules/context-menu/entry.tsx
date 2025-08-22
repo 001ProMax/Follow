@@ -1,36 +1,60 @@
-import { router } from "expo-router"
+import type { FeedViewType } from "@follow/constants"
+import { useIsEntryStarred } from "@follow/store/collection/hooks"
+import { collectionSyncService } from "@follow/store/collection/store"
+import { getEntry } from "@follow/store/entry/getter"
+import { useEntry } from "@follow/store/entry/hooks"
+import { unreadSyncService } from "@follow/store/unread/store"
+import { PortalProvider } from "@gorhom/portal"
 import type { PropsWithChildren } from "react"
 import { useCallback } from "react"
-import { Share, Text, View } from "react-native"
+import { useTranslation } from "react-i18next"
+import { Share, View } from "react-native"
 
-import {
-  EntryContentWebView,
-  preloadWebViewEntry,
-} from "@/src/components/native/webview/EntryContentWebView"
+import { getHideAllReadSubscriptions } from "@/src/atoms/settings/general"
+import { EntryContentWebView } from "@/src/components/native/webview/EntryContentWebView"
+import { preloadWebViewEntry } from "@/src/components/native/webview/webview-manager"
 import { ContextMenu } from "@/src/components/ui/context-menu"
-import { PortalHost } from "@/src/components/ui/portal"
-import { openLink } from "@/src/lib/native"
+import { Text } from "@/src/components/ui/typography/Text"
+import { useNavigation } from "@/src/lib/navigation/hooks"
 import { toast } from "@/src/lib/toast"
-import { useSelectedView } from "@/src/modules/screen/atoms"
-import { useIsEntryStarred } from "@/src/store/collection/hooks"
-import { collectionSyncService } from "@/src/store/collection/store"
-import { useEntry } from "@/src/store/entry/hooks"
-import { unreadSyncService } from "@/src/store/unread/store"
+import { EntryDetailScreen } from "@/src/screens/(stack)/entries/[entryId]/EntryDetailScreen"
 
-export const EntryItemContextMenu = ({ id, children }: PropsWithChildren<{ id: string }>) => {
-  const entry = useEntry(id)
+import { getFetchEntryPayload, useSelectedFeed, useSelectedView } from "../screen/atoms"
+
+export const EntryItemContextMenu = ({
+  id,
+  children,
+  view,
+}: PropsWithChildren<{
+  id: string
+  view: FeedViewType
+}>) => {
+  const { t } = useTranslation()
+  const selectedView = useSelectedView()
+  const selectedFeed = useSelectedFeed()
+  const entry = useEntry(id, (state) => ({
+    read: state.read,
+    feedId: state.feedId,
+    title: state.title,
+    publishedAt: state.publishedAt,
+    url: state.url,
+  }))
   const feedId = entry?.feedId
-  const view = useSelectedView()
   const isEntryStarred = useIsEntryStarred(id)
-
+  const navigation = useNavigation()
   const handlePressPreview = useCallback(() => {
-    if (!entry) return
-    preloadWebViewEntry(entry)
-    router.push(`/entries/${id}`)
-  }, [entry, id])
-
+    if (entry) {
+      const fullEntry = getEntry(id)
+      if (fullEntry) {
+        preloadWebViewEntry(fullEntry)
+      }
+      navigation.pushControllerView(EntryDetailScreen, {
+        entryId: id,
+        view: view!,
+      })
+    }
+  }, [entry, id, navigation, view])
   if (!entry) return null
-
   return (
     <ContextMenu.Root>
       <ContextMenu.Trigger>{children}</ContextMenu.Trigger>
@@ -38,29 +62,89 @@ export const EntryItemContextMenu = ({ id, children }: PropsWithChildren<{ id: s
       <ContextMenu.Content>
         <ContextMenu.Preview size="STRETCH" onPress={handlePressPreview}>
           {() => (
-            <PortalHost>
+            <PortalProvider>
               <View className="bg-system-background flex-1">
                 <Text className="text-label mt-5 p-4 text-2xl font-semibold" numberOfLines={2}>
                   {entry.title?.trim()}
                 </Text>
-                <EntryContentWebView entry={entry} />
+                <EntryContentWebView entryId={id} />
               </View>
-            </PortalHost>
+            </PortalProvider>
           )}
         </ContextMenu.Preview>
 
         <ContextMenu.Item
-          key="MarkAsRead"
+          key="MarkAsReadAbove"
           onSelect={() => {
-            unreadSyncService.markEntryAsRead(id)
+            const payload = getFetchEntryPayload(selectedFeed, selectedView)
+            const { publishedAt } = entry
+            unreadSyncService.markBatchAsRead({
+              view: selectedView,
+              filter: payload,
+              time: {
+                startTime: new Date(publishedAt).getTime() + 1,
+                endTime: Date.now(),
+              },
+              excludePrivate: getHideAllReadSubscriptions(),
+            })
           }}
         >
-          <ContextMenu.ItemTitle>Mark as Read</ContextMenu.ItemTitle>
           <ContextMenu.ItemIcon
             ios={{
-              name: "checkmark",
+              name: "arrow.up",
             }}
           />
+          <ContextMenu.ItemTitle>
+            {t("operation.mark_all_as_read_which", {
+              which: t("operation.mark_all_as_read_which_above"),
+            })}
+          </ContextMenu.ItemTitle>
+        </ContextMenu.Item>
+
+        <ContextMenu.Item
+          key="MarkAsRead"
+          onSelect={() => {
+            entry.read
+              ? unreadSyncService.markEntryAsUnread(id)
+              : unreadSyncService.markEntryAsRead(id)
+          }}
+        >
+          <ContextMenu.ItemTitle>
+            {entry.read ? t("operation.mark_as_unread") : t("operation.mark_as_read")}
+          </ContextMenu.ItemTitle>
+          <ContextMenu.ItemIcon
+            ios={{
+              name: entry.read ? "circle.fill" : "checkmark.circle",
+            }}
+          />
+        </ContextMenu.Item>
+
+        <ContextMenu.Item
+          key="MarkAsReadBelow"
+          onSelect={() => {
+            const payload = getFetchEntryPayload(selectedFeed, selectedView)
+            const { publishedAt } = entry
+            unreadSyncService.markBatchAsRead({
+              view: selectedView,
+              filter: payload,
+              time: {
+                startTime: 1,
+                endTime: new Date(publishedAt).getTime() - 1,
+              },
+              excludePrivate: getHideAllReadSubscriptions(),
+            })
+          }}
+        >
+          <ContextMenu.ItemIcon
+            ios={{
+              name: "arrow.down",
+            }}
+          />
+          <ContextMenu.ItemTitle>
+            {t("operation.mark_all_as_read_which", {
+              which: t("operation.mark_all_as_read_which_below"),
+            })}
+          </ContextMenu.ItemTitle>
         </ContextMenu.Item>
 
         {feedId && view !== undefined && (
@@ -68,15 +152,16 @@ export const EntryItemContextMenu = ({ id, children }: PropsWithChildren<{ id: s
             key="Star"
             onSelect={() => {
               if (isEntryStarred) {
-                collectionSyncService.unstarEntry(id)
-                toast.info("Unstarred")
+                collectionSyncService.unstarEntry({
+                  entryId: id,
+                })
+                toast.success("Unstarred")
               } else {
                 collectionSyncService.starEntry({
-                  feedId,
                   entryId: id,
                   view,
                 })
-                toast.info("Starred")
+                toast.success("Starred")
               }
             }}
           >
@@ -85,24 +170,9 @@ export const EntryItemContextMenu = ({ id, children }: PropsWithChildren<{ id: s
                 name: isEntryStarred ? "star.slash" : "star",
               }}
             />
-            <ContextMenu.ItemTitle>{isEntryStarred ? "Unstar" : "Star"}</ContextMenu.ItemTitle>
-          </ContextMenu.Item>
-        )}
-
-        {entry.url && (
-          <ContextMenu.Item
-            key="OpenLink"
-            onSelect={() => {
-              if (!entry.url) return
-              openLink(entry.url)
-            }}
-          >
-            <ContextMenu.ItemIcon
-              ios={{
-                name: "link",
-              }}
-            />
-            <ContextMenu.ItemTitle>Open Link</ContextMenu.ItemTitle>
+            <ContextMenu.ItemTitle>
+              {isEntryStarred ? t("operation.unstar") : t("operation.star")}
+            </ContextMenu.ItemTitle>
           </ContextMenu.Item>
         )}
 
@@ -123,7 +193,7 @@ export const EntryItemContextMenu = ({ id, children }: PropsWithChildren<{ id: s
                 name: "square.and.arrow.up",
               }}
             />
-            <ContextMenu.ItemTitle>Share</ContextMenu.ItemTitle>
+            <ContextMenu.ItemTitle>{t("operation.share")}</ContextMenu.ItemTitle>
           </ContextMenu.Item>
         )}
       </ContextMenu.Content>

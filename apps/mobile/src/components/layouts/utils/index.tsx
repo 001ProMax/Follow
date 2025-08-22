@@ -1,4 +1,5 @@
-import { PixelRatio, Platform } from "react-native"
+import Constants from "expo-constants"
+import { Platform } from "react-native"
 
 type Layout = { width: number; height: number }
 /**
@@ -14,11 +15,11 @@ export function getDefaultHeaderHeight(
 
   // On models with Dynamic Island the status bar height is smaller than the safe area top inset.
   const hasDynamicIsland = topInset > 50
-  const statusBarHeight = hasDynamicIsland ? topInset - (5 + 1 / PixelRatio.get()) : topInset
+  const topHeight = hasDynamicIsland ? Constants.statusBarHeight : topInset
 
   const isLandscape = layout.width > layout.height
 
-  if (Platform.OS === "ios" && (Platform.isPad || Platform.isTV)) {
+  if (Platform.OS === "ios" && Platform.isPad) {
     if (modalPresentation) {
       headerHeight = 56
     } else {
@@ -36,5 +37,5 @@ export function getDefaultHeaderHeight(
     }
   }
 
-  return headerHeight + (!modalPresentation ? statusBarHeight : 0)
+  return headerHeight + (!modalPresentation ? topHeight : 0)
 }

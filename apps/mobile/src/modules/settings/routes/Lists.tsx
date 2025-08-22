@@ -1,14 +1,16 @@
-import { router } from "expo-router"
-import { createContext, createElement, useCallback, useContext, useMemo } from "react"
+import { useOwnedLists, usePrefetchLists } from "@follow/store/list/hooks"
+import type { ListModel } from "@follow/store/list/types"
+import { createContext, createElement, use, useCallback, useMemo } from "react"
+import { useTranslation } from "react-i18next"
 import type { ListRenderItem } from "react-native"
-import { ActivityIndicator, Image, StyleSheet, Text, View } from "react-native"
+import { Image, StyleSheet, View } from "react-native"
 import Animated, { LinearTransition } from "react-native-reanimated"
-import { useColor } from "react-native-uikit-colors"
+import { useColor, useColors } from "react-native-uikit-colors"
 
 import { Balance } from "@/src/components/common/Balance"
 import { UINavigationHeaderActionButton } from "@/src/components/layouts/header/NavigationHeader"
 import {
-  NavigationBlurEffectHeader,
+  NavigationBlurEffectHeaderView,
   SafeNavigationScrollView,
 } from "@/src/components/layouts/views/SafeNavigationScrollView"
 import {
@@ -16,49 +18,54 @@ import {
   GroupedInsetListCard,
 } from "@/src/components/ui/grouped/GroupedList"
 import { FallbackIcon } from "@/src/components/ui/icon/fallback-icon"
+import { PlatformActivityIndicator } from "@/src/components/ui/loading/PlatformActivityIndicator"
 import { ItemPressable } from "@/src/components/ui/pressable/ItemPressable"
+import { Text } from "@/src/components/ui/typography/Text"
 import { views } from "@/src/constants/views"
 import { AddCuteReIcon } from "@/src/icons/add_cute_re"
 import { PowerIcon } from "@/src/icons/power"
 import { RadaCuteFiIcon } from "@/src/icons/rada_cute_fi"
 import { UserAdd2CuteFiIcon } from "@/src/icons/user_add_2_cute_fi"
 import { Wallet2CuteFiIcon } from "@/src/icons/wallet_2_cute_fi"
-import type { HonoApiClient } from "@/src/morph/types"
-import { useOwnedLists, usePrefetchOwnedLists } from "@/src/store/list/hooks"
-import type { ListModel } from "@/src/store/list/store"
+import { useNavigation } from "@/src/lib/navigation/hooks"
+import { ListScreen } from "@/src/screens/(modal)/ListScreen"
 import { accentColor } from "@/src/theme/colors"
 
 import { SwipeableGroupProvider, SwipeableItem } from "../../../components/common/SwipeableItem"
-import { useSettingsNavigation } from "../hooks"
+import { ManageListScreen } from "./ManageList"
 
-const ListContext = createContext({} as Record<string, HonoApiClient.List_List_Get>)
+const ListContext = createContext({} as Record<string, ListModel>)
 export const ListsScreen = () => {
-  const { isLoading, data } = usePrefetchOwnedLists()
+  const { t } = useTranslation("settings")
+  const { isLoading, data } = usePrefetchLists()
   const lists = useOwnedLists()
-
   return (
-    <SafeNavigationScrollView nestedScrollEnabled className="bg-system-grouped-background">
-      <NavigationBlurEffectHeader
-        title="Lists"
-        headerRight={useCallback(
-          () => (
-            <AddListButton />
-          ),
-          [],
-        )}
-      />
-
+    <SafeNavigationScrollView
+      nestedScrollEnabled
+      className="bg-system-grouped-background"
+      Header={
+        <NavigationBlurEffectHeaderView
+          title={t("titles.lists")}
+          headerRight={useCallback(
+            () => (
+              <AddListButton />
+            ),
+            [],
+          )}
+        />
+      }
+    >
       <View className="mt-6">
         <GroupedInsetListCard>
           <GroupedInformationCell
-            title="Lists"
-            description="Lists are collections of feeds that you can share or sell for others to subscribe to. Subscribers will synchronize and access all feeds in the list."
+            title={t("titles.lists")}
+            description={t("lists.info")}
             icon={<RadaCuteFiIcon height={40} width={40} color="#fff" />}
-            iconBackgroundColor="#34D399"
+            iconBackgroundColor="#7DD3FC"
           />
         </GroupedInsetListCard>
       </View>
-      <ListContext.Provider
+      <ListContext
         value={useMemo(
           () =>
             data?.reduce(
@@ -66,13 +73,13 @@ export const ListsScreen = () => {
                 acc[list.id] = list
                 return acc
               },
-              {} as Record<string, HonoApiClient.List_List_Get>,
+              {} as Record<string, ListModel>,
             ) ?? {},
           [data],
         )}
       >
         <View className="mt-6">
-          <GroupedInsetListCard>
+          <GroupedInsetListCard showSeparator={false}>
             {lists.length > 0 && (
               <SwipeableGroupProvider>
                 <Animated.FlatList
@@ -87,71 +94,94 @@ export const ListsScreen = () => {
             )}
             {isLoading && lists.length === 0 && (
               <View className="mt-1">
-                <ActivityIndicator />
+                <PlatformActivityIndicator />
               </View>
             )}
           </GroupedInsetListCard>
         </View>
-      </ListContext.Provider>
+      </ListContext>
     </SafeNavigationScrollView>
   )
 }
-
 const AddListButton = () => {
   const labelColor = useColor("label")
+  const navigation = useNavigation()
   return (
-    <UINavigationHeaderActionButton onPress={() => router.push("/list")}>
+    <UINavigationHeaderActionButton
+      onPress={() => {
+        navigation.presentControllerView(ListScreen)
+      }}
+    >
       <AddCuteReIcon height={20} width={20} color={labelColor} />
     </UINavigationHeaderActionButton>
   )
 }
-
 const ItemSeparatorComponent = () => {
   return (
     <View
-      className="bg-opaque-separator ml-24 h-px flex-1"
+      className="bg-opaque-separator/50 ml-24 h-px flex-1"
       collapsable={false}
-      style={{ transform: [{ scaleY: 0.5 }] }}
+      style={{
+        transform: [
+          {
+            scaleY: 0.5,
+          },
+        ],
+      }}
     />
   )
 }
-
 const keyExtractor = (item: ListModel) => item.id
-
 const ListItemCell: ListRenderItem<ListModel> = (props) => {
   return <ListItemCellImpl {...props} />
 }
 const ListItemCellImpl: ListRenderItem<ListModel> = ({ item: list }) => {
+  const { t } = useTranslation("common")
   const { title, description } = list
-  const listData = useContext(ListContext)[list.id]
-  const navigation = useSettingsNavigation()
+  const listData = use(ListContext)[list.id]
+  const navigation = useNavigation()
+  const colors = useColors()
   return (
     <SwipeableItem
       swipeRightToCallAction
       rightActions={[
         {
-          label: "Manage",
+          label: t("words.manage"),
           onPress: () => {
-            navigation.navigate("ManageList", { id: list.id })
+            navigation.pushControllerView(ManageListScreen, {
+              id: list.id,
+            })
           },
           backgroundColor: accentColor,
         },
         {
-          label: "Edit",
+          label: t("words.edit"),
           onPress: () => {
-            router.push(`/list?id=${list.id}`)
+            navigation.presentControllerView(ListScreen, {
+              listId: list.id,
+            })
           },
-          backgroundColor: "#0ea5e9",
+          backgroundColor: colors.blue,
         },
       ]}
     >
       <ItemPressable
         className="flex-row p-4"
-        onPress={() => navigation.navigate("ManageList", { id: list.id })}
+        onPress={() =>
+          navigation.pushControllerView(ManageListScreen, {
+            id: list.id,
+          })
+        }
       >
         <View className="size-16 overflow-hidden rounded-lg">
           {list.image ? (
-            <Image source={{ uri: list.image }} resizeMode="cover" className="size-full" />
+            <Image
+              source={{
+                uri: list.image,
+              }}
+              resizeMode="cover"
+              className="size-full"
+            />
           ) : (
             <FallbackIcon title={list.title || ""} size="100%" textStyle={styles.title} />
           )}
@@ -176,13 +206,17 @@ const ListItemCellImpl: ListRenderItem<ListModel> = ({ item: list }) => {
                 height: 16,
                 width: 16,
               })}
-            <Text className="text-secondary-label text-base">{views[list.view]?.name}</Text>
+            {!!views[list.view]?.name && (
+              <Text className="text-secondary-label text-base">{t(views[list.view]!.name)}</Text>
+            )}
           </View>
         </View>
 
         <View
           className="bg-opaque-separator mx-4 h-full"
-          style={{ width: StyleSheet.hairlineWidth }}
+          style={{
+            width: StyleSheet.hairlineWidth,
+          }}
         />
         <View className="w-16 gap-1">
           <View className="flex-row items-center gap-1">
@@ -208,7 +242,6 @@ const ListItemCellImpl: ListRenderItem<ListModel> = ({ item: list }) => {
     </SwipeableItem>
   )
 }
-
 const styles = StyleSheet.create({
   title: {
     fontSize: 20,

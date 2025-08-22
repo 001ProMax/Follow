@@ -1,60 +1,74 @@
-import { env } from "@follow/shared/src/env"
+import { env } from "@follow/shared/env.rn"
+import { getListById } from "@follow/store/list/getters"
+import { subscriptionSyncService } from "@follow/store/subscription/store"
+import { unreadSyncService } from "@follow/store/unread/store"
 import type { FC, PropsWithChildren } from "react"
 import { useMemo } from "react"
+import { useTranslation } from "react-i18next"
 import { Alert, Clipboard } from "react-native"
 
 import { ContextMenu } from "@/src/components/ui/context-menu"
+import { useNavigation } from "@/src/lib/navigation/hooks"
 import { toast } from "@/src/lib/toast"
-import { getList } from "@/src/store/list/getters"
-import { useIsOwnList } from "@/src/store/list/hooks"
-import { subscriptionSyncService } from "@/src/store/subscription/store"
+import { FollowScreen } from "@/src/screens/(modal)/FollowScreen"
 
 export const SubscriptionListItemContextMenu: FC<
   PropsWithChildren & {
     id: string
   }
 > = ({ id, children }) => {
-  const isOwnList = useIsOwnList(id)
+  const { t } = useTranslation()
+  const navigation = useNavigation()
   const actions = useMemo(
-    () => [
-      isOwnList && {
-        title: "Edit",
-        onSelect: () => {
-          const list = getList(id)
-          if (!list) return
-          // TODO
+    () =>
+      [
+        {
+          title: t("operation.mark_as_read"),
+          onSelect: () => {
+            unreadSyncService.markListAsRead(id)
+          },
         },
-      },
-      {
-        title: "Copy Link",
-        onSelect: () => {
-          const list = getList(id)
-          if (!list) return
-          toast.info("Link copied to clipboard")
-          Clipboard.setString(`${env.VITE_WEB_URL}/share/lists/${list.id}`)
+        {
+          title: t("operation.edit"),
+          onSelect: () => {
+            const list = getListById(id)
+            if (!list) return
+            navigation.presentControllerView(FollowScreen, {
+              type: "list",
+              id: list.id,
+            })
+          },
         },
-      },
-      {
-        title: "Unsubscribe",
-        destructive: true,
-        onSelect: () => {
-          Alert.alert("Unsubscribe", "Are you sure you want to unsubscribe?", [
-            {
-              text: "Cancel",
-              style: "cancel",
-            },
-            {
-              text: "Unsubscribe",
-              style: "destructive",
-              onPress: () => {
-                subscriptionSyncService.unsubscribe(id)
+        {
+          title: t("operation.copy_which", { which: t("operation.copy.link") }),
+          onSelect: () => {
+            const list = getListById(id)
+            if (!list) return
+            toast.success(t("operation.copy_which_success", { which: t("operation.copy.link") }))
+            Clipboard.setString(`${env.WEB_URL}/share/lists/${list.id}`)
+          },
+        },
+        {
+          title: t("operation.unfollow"),
+          destructive: true,
+          onSelect: () => {
+            Alert.alert(t("operation.unfollow"), "Are you sure you want to unsubscribe?", [
+              {
+                text: "Cancel",
+                style: "cancel",
               },
-            },
-          ])
+              {
+                text: t("operation.unfollow"),
+                style: "destructive",
+                onPress: () => {
+                  subscriptionSyncService.unsubscribe(id)
+                },
+              },
+            ])
+          },
         },
-      },
-    ],
-    [id, isOwnList],
+      ].filter((i) => !!i),
+    [id, navigation, t],
   )
 
   return (
@@ -62,19 +76,17 @@ export const SubscriptionListItemContextMenu: FC<
       <ContextMenu.Trigger>{children}</ContextMenu.Trigger>
 
       <ContextMenu.Content>
-        {actions
-          .filter((i) => !!i)
-          .map((action) => {
-            return (
-              <ContextMenu.Item
-                key={action.title}
-                destructive={action.destructive}
-                onSelect={action.onSelect}
-              >
-                <ContextMenu.ItemTitle>{action.title}</ContextMenu.ItemTitle>
-              </ContextMenu.Item>
-            )
-          })}
+        {actions.map((action) => {
+          return (
+            <ContextMenu.Item
+              key={action.title}
+              destructive={action.destructive}
+              onSelect={action.onSelect}
+            >
+              <ContextMenu.ItemTitle>{action.title}</ContextMenu.ItemTitle>
+            </ContextMenu.Item>
+          )
+        })}
       </ContextMenu.Content>
     </ContextMenu.Root>
   )

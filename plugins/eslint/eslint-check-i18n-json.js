@@ -1,7 +1,10 @@
 // @ts-check
 /** @type {import("eslint").ESLint.Plugin} */
 import fs from "node:fs"
-import path from "node:path"
+
+import path, { normalize, sep } from "pathe"
+
+import { cleanJsonText } from "../utils.js"
 
 export default {
   rules: {
@@ -24,7 +27,7 @@ export default {
 
             let json
             try {
-              json = JSON.parse(sourceCode.text)
+              json = JSON.parse(cleanJsonText(sourceCode.text))
             } catch {
               context.report({
                 node,
@@ -81,7 +84,8 @@ export default {
 
             if (!filename.endsWith(".json")) return
 
-            const parts = filename.split(path.sep)
+            const parts = normalize(filename).split(sep)
+            // @ts-ignore
             const lang = parts.at(-1).split(".")[0]
             const namespace = parts.at(-2)
 
@@ -92,7 +96,8 @@ export default {
 
             try {
               currentJson = JSON.parse(sourceCode.text)
-              const englishFilePath = path.join(process.cwd(), "locales", namespace, "en.json")
+              // @ts-ignore
+              const englishFilePath = path.join(path.dirname(filename), "../", namespace, "en.json")
               englishJson = JSON.parse(fs.readFileSync(englishFilePath, "utf8"))
             } catch (error) {
               context.report({

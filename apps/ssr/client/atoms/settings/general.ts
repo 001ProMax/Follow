@@ -1,4 +1,4 @@
-import type { GeneralSettings } from "@follow/shared/interface/settings"
+import type { GeneralSettings } from "@follow/shared/settings/interface"
 
 import { createSettingAtom } from "./helper"
 
@@ -7,7 +7,6 @@ const createDefaultSettings = (): Partial<GeneralSettings> => ({
   appLaunchOnStartup: false,
   language: "en",
   // Data control
-  dataPersist: true,
   sendAnonymousData: true,
 
   // view
@@ -38,7 +37,6 @@ export const {
 
 export const generalServerSyncWhiteListKeys: (keyof GeneralSettings)[] = [
   "appLaunchOnStartup",
-  "dataPersist",
   "sendAnonymousData",
   "language",
 ]

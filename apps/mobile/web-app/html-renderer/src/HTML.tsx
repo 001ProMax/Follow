@@ -1,23 +1,24 @@
 import { MemoedDangerousHTMLStyle } from "@follow/components/common/MemoedDangerousHTMLStyle.js"
 import { clsx } from "clsx"
 import katexStyle from "katex/dist/katex.min.css?raw"
+import * as React from "react"
 import { createElement, Fragment, useEffect, useMemo, useState } from "react"
 
 import { WrappedElementProvider } from "./common/WrappedElementProvider"
 import { MarkdownRenderContainerRefContext } from "./components/__internal/ctx"
 import { parseHtml } from "./parser"
 
-export type HTMLProps<A extends keyof JSX.IntrinsicElements = "div"> = {
+export type HTMLProps<A extends keyof React.JSX.IntrinsicElements = "div"> = {
   children: string | null | undefined
   as?: A
 
   accessory?: React.ReactNode
   noMedia?: boolean
-} & JSX.IntrinsicElements[A] &
+} & React.JSX.IntrinsicElements[A] &
   Partial<{
     renderInlineStyle: boolean
   }>
-export const HTML = <A extends keyof JSX.IntrinsicElements = "div">(props: HTMLProps<A>) => {
+export const HTML = <A extends keyof React.JSX.IntrinsicElements = "div">(props: HTMLProps<A>) => {
   const {
     children,
     renderInlineStyle,
@@ -57,7 +58,7 @@ export const HTML = <A extends keyof JSX.IntrinsicElements = "div">(props: HTMLP
 
   if (!markdownElement) return <div className="h-px" />
   return (
-    <MarkdownRenderContainerRefContext.Provider value={refElement}>
+    <MarkdownRenderContainerRefContext value={refElement}>
       <MemoedDangerousHTMLStyle>{katexStyle}</MemoedDangerousHTMLStyle>
       <WrappedElementProvider>
         {createElement(
@@ -65,13 +66,13 @@ export const HTML = <A extends keyof JSX.IntrinsicElements = "div">(props: HTMLP
           {
             ...rest,
             ref: setRefElement,
-            className: clsx("prose mx-auto px-3", "dark:prose-invert"),
+            className: clsx("prose mx-auto px-5 pb-8", "dark:prose-invert"),
           },
           markdownElement,
         )}
       </WrappedElementProvider>
 
       {!!accessory && <Fragment key={shouldForceReMountKey}>{accessory}</Fragment>}
-    </MarkdownRenderContainerRefContext.Provider>
+    </MarkdownRenderContainerRefContext>
   )
 }

@@ -1,70 +1,39 @@
 import { FeedViewType } from "@follow/constants"
+import { useCollectionEntryList } from "@follow/store/collection/hooks"
+import { FEED_COLLECTION_LIST } from "@follow/store/constants/app"
+import {
+  useEntriesQuery,
+  useEntryIdsByFeedId,
+  useEntryIdsByFeedIds,
+  useEntryIdsByInboxId,
+  useEntryIdsByListId,
+  useEntryIdsByView,
+} from "@follow/store/entry/hooks"
+import { useEntryStore } from "@follow/store/entry/store"
+import type {
+  FetchEntriesProps,
+  UseEntriesProps,
+  UseEntriesReturn,
+} from "@follow/store/entry/types"
+import { fallbackReturn } from "@follow/store/entry/utils"
+import { useFeedById } from "@follow/store/feed/hooks"
+import { useInboxById } from "@follow/store/inbox/hooks"
+import { useListById } from "@follow/store/list/hooks"
+import { getSubscriptionByCategory } from "@follow/store/subscription/getter"
+import { useSubscriptionByFeedId, useViewWithSubscription } from "@follow/store/subscription/hooks"
 import { jotaiStore } from "@follow/utils"
-import { atom, useAtom, useAtomValue, useSetAtom } from "jotai"
-import { createContext, useCallback, useContext, useMemo } from "react"
+import { EventBus } from "@follow/utils/event-bus"
+import { debounce } from "es-toolkit"
+import { atom, useAtomValue } from "jotai"
+import { selectAtom } from "jotai/utils"
+import type { ReactNode } from "react"
+import { createContext, createElement, use, useCallback, useEffect, useMemo, useState } from "react"
+import { useTranslation } from "react-i18next"
+import type { SharedValue } from "react-native-reanimated"
+import { makeMutable, useSharedValue } from "react-native-reanimated"
 
+import { useFetchEntriesSettings } from "@/src/atoms/settings/general"
 import { views } from "@/src/constants/views"
-import { usePrefetchEntries } from "@/src/store/entry/hooks"
-import type { FetchEntriesProps } from "@/src/store/entry/types"
-import { FEED_COLLECTION_LIST } from "@/src/store/entry/utils"
-import { useFeed } from "@/src/store/feed/hooks"
-import { useInbox } from "@/src/store/inbox/hooks"
-import { useList } from "@/src/store/list/hooks"
-import { getSubscriptionByCategory } from "@/src/store/subscription/getter"
-import { useSubscription } from "@/src/store/subscription/hooks"
-
-// drawer open state
-
-const drawerOpenAtom = atom<boolean>(false)
-
-export function useFeedDrawer() {
-  const [state, setState] = useAtom(drawerOpenAtom)
-
-  return {
-    isDrawerOpen: state,
-    openDrawer: useCallback(() => setState(true), [setState]),
-    closeDrawer: useCallback(() => setState(false), [setState]),
-    toggleDrawer: useCallback(() => setState(!state), [setState, state]),
-  }
-}
-
-export const closeDrawer = () => jotaiStore.set(drawerOpenAtom, false)
-
-// is drawer swipe disabled
-
-const isDrawerSwipeDisabledAtom = atom<boolean>(true)
-
-export function useIsDrawerSwipeDisabled() {
-  return useAtomValue(isDrawerSwipeDisabledAtom)
-}
-
-export function useSetDrawerSwipeDisabled() {
-  return useSetAtom(isDrawerSwipeDisabledAtom)
-}
-
-// collection panel selected state
-
-type CollectionPanelState = {
-  type: "view"
-  viewId: FeedViewType
-}
-
-const collectionPanelStateAtom = atom<CollectionPanelState>({
-  type: "view",
-  viewId: FeedViewType.Articles,
-})
-
-export function useSelectedCollection() {
-  return useAtomValue(collectionPanelStateAtom)
-}
-export const selectCollection = (state: CollectionPanelState) => {
-  jotaiStore.set(collectionPanelStateAtom, state)
-  if (state.type === "view" || state.type === "list") {
-    jotaiStore.set(selectedTimelineAtom, state)
-  }
-}
-
-// feed panel selected state
 
 export type SelectedTimeline = {
   type: "view"
@@ -101,32 +70,48 @@ export const EntryListContext = createContext<{ type: "timeline" | "feed" | "sub
   type: "timeline",
 })
 export const useEntryListContext = () => {
-  return useContext(EntryListContext)
+  return use(EntryListContext)
 }
 
 export function useSelectedView() {
-  const selectedTimeLine = useAtomValue(selectedTimelineAtom)
-  const selectedFeed = useAtomValue(selectedFeedAtom)
-
-  const list = useList(selectedFeed?.type === "list" ? selectedFeed.listId : "")
-  const subscription = useSubscription(
-    selectedFeed && selectedFeed.type === "feed" ? selectedFeed.feedId : "",
-  )
-
-  if (selectedTimeLine.type === "view") {
-    return selectedTimeLine.viewId
-  }
-  if (selectedTimeLine.type === "list") {
-    return list?.view
-  }
-  if (selectedFeed?.type === "feed") {
-    return subscription?.view
-  }
+  return useAtomValue(useMemo(() => selectAtom(selectedTimelineAtom, (state) => state.viewId), []))
 }
 
-function getFetchEntryPayload(
+export const getSelectedView = () => {
+  return jotaiStore.get(selectedTimelineAtom).viewId
+}
+
+export function useSelectedFeed(): SelectedTimeline | SelectedFeed
+export function useSelectedFeed<T>(
+  selector?: (selectedFeed: SelectedTimeline | SelectedFeed) => T,
+): T | null
+export function useSelectedFeed<T>(
+  selector?: (selectedFeed: SelectedTimeline | SelectedFeed) => T,
+) {
+  const entryListContext = useEntryListContext()
+
+  const [stableSelector] = useState(() => selector)
+  return useAtomValue(
+    useMemo(
+      () =>
+        atom((get) => {
+          const selectedTimeline = get(selectedTimelineAtom)
+          const selectedFeed = get(selectedFeedAtom)
+          const result = entryListContext.type === "feed" ? selectedFeed : selectedTimeline
+          if (stableSelector) {
+            return stableSelector(result)
+          }
+          return result
+        }),
+      [entryListContext, stableSelector],
+    ),
+  )
+}
+
+export const getFetchEntryPayload = (
   selectedFeed: SelectedTimeline | SelectedFeed,
-): FetchEntriesProps | null {
+  view: FeedViewType = FeedViewType.Articles,
+): FetchEntriesProps | null => {
   if (!selectedFeed) {
     return null
   }
@@ -142,7 +127,9 @@ function getFetchEntryPayload(
       break
     }
     case "category": {
-      payload = { feedId: getSubscriptionByCategory(selectedFeed.categoryName).join(",") }
+      payload = {
+        feedIdList: getSubscriptionByCategory({ category: selectedFeed.categoryName, view }),
+      }
       break
     }
     case "list": {
@@ -158,25 +145,186 @@ function getFetchEntryPayload(
   const isCollection =
     selectedFeed && selectedFeed.type === "feed" && selectedFeed?.feedId === FEED_COLLECTION_LIST
   if (isCollection) {
+    payload.view = view
     payload.isCollection = true
   }
 
   return payload
 }
 
-export function useSelectedFeed() {
-  const entryListContext = useEntryListContext()
+function useRemoteEntries(props?: UseEntriesProps): UseEntriesReturn {
+  const selectedFeed = useSelectedFeed()
+  const selectedView = useSelectedView()
+  const view = props?.viewId ?? selectedView
+  const payload = getFetchEntryPayload(
+    selectedFeed?.type === "view"
+      ? {
+          type: "view",
+          viewId: view,
+        }
+      : selectedFeed,
+    view,
+  )
+  const options = useFetchEntriesSettings()
 
-  const selectedTimeline = useAtomValue(selectedTimelineAtom)
-  const selectedFeed = useAtomValue(selectedFeedAtom)
-  return entryListContext.type === "feed" ? selectedFeed : selectedTimeline
+  const query = useEntriesQuery(props?.active ? { ...payload, ...options } : undefined)
+
+  const [fetchedTime, setFetchedTime] = useState<number>()
+  useEffect(() => {
+    if (!query.isFetching) {
+      setFetchedTime(Date.now())
+    }
+  }, [query.isFetching])
+
+  const refetch = useCallback(async () => void query.refetch(), [query])
+  const fetchNextPage = useCallback(async () => void query.fetchNextPage(), [query])
+
+  if (!query.data || query.isLoading) {
+    return fallbackReturn
+  }
+
+  return {
+    entriesIds: query.entriesIds,
+    hasNext: query.hasNextPage,
+    hasUpdate: false,
+    refetch,
+    fetchNextPage,
+    isLoading: query.isFetching,
+    isRefetching: query.isRefetching,
+    isReady: query.isSuccess,
+    isFetchingNextPage: query.isFetchingNextPage,
+    isFetching: query.isFetching,
+    hasNextPage: query.hasNextPage,
+    error: query.isError ? query.error : null,
+    fetchedTime,
+  }
 }
 
-export function useFetchEntriesControls() {
+function useLocalEntries(props?: UseEntriesProps): UseEntriesReturn {
   const selectedFeed = useSelectedFeed()
+  const selectedView = useSelectedView()
+  const view = props?.viewId ?? selectedView
+  const payload = getFetchEntryPayload(
+    selectedFeed?.type === "view"
+      ? {
+          type: "view",
+          viewId: view,
+        }
+      : selectedFeed,
+    view,
+  )
+  const options = useFetchEntriesSettings()
 
-  const payload = getFetchEntryPayload(selectedFeed)
-  return usePrefetchEntries(payload)
+  const { feedId, feedIdList, listId, inboxId, isCollection } = payload || {}
+  const { hidePrivateSubscriptionsInTimeline, unreadOnly } = options
+
+  const entryIdsByView = useEntryIdsByView(view, hidePrivateSubscriptionsInTimeline)
+  const entryIdsByCollections = useCollectionEntryList(view)
+  const entryIdsByFeedId = useEntryIdsByFeedId(feedId)
+  const entryIdsByCategory = useEntryIdsByFeedIds(feedIdList)
+  const entryIdsByListId = useEntryIdsByListId(listId)
+  const entryIdsByInboxId = useEntryIdsByInboxId(inboxId)
+
+  const showEntriesByView =
+    !feedId && (!feedIdList || feedIdList?.length === 0) && !isCollection && !inboxId && !listId
+
+  const allEntries = useEntryStore(
+    useCallback(
+      (state) => {
+        const ids = isCollection
+          ? entryIdsByCollections
+          : showEntriesByView
+            ? (entryIdsByView ?? [])
+            : (getEntryIdsFromMultiplePlace(
+                entryIdsByFeedId,
+                entryIdsByCategory,
+                entryIdsByListId,
+                entryIdsByInboxId,
+              ) ?? [])
+
+        return ids
+          .map((id) => {
+            const entry = state.data[id]
+            if (!entry) return null
+            if (unreadOnly && entry.read) {
+              return null
+            }
+            return entry.id
+          })
+          .filter((id) => typeof id === "string")
+      },
+      [
+        entryIdsByCategory,
+        entryIdsByCollections,
+        entryIdsByFeedId,
+        entryIdsByInboxId,
+        entryIdsByListId,
+        entryIdsByView,
+        showEntriesByView,
+        unreadOnly,
+      ],
+    ),
+  )
+
+  const [page, setPage] = useState(0)
+  const pageSize = 30
+  const totalPage = useMemo(
+    () => (allEntries ? Math.ceil(allEntries.length / pageSize) : 0),
+    [allEntries],
+  )
+
+  const entries = useMemo(() => {
+    return allEntries?.slice(0, (page + 1) * pageSize) || []
+  }, [allEntries, page, pageSize])
+
+  const hasNext = useMemo(() => {
+    return entries.length < (allEntries?.length || 0)
+  }, [entries.length, allEntries])
+
+  const refetch = useCallback(async () => {
+    setPage(0)
+  }, [])
+
+  const fetchNextPage = useCallback(
+    debounce(async () => {
+      setPage(page + 1)
+    }, 300),
+    [page],
+  )
+
+  useEffect(() => {
+    setPage(0)
+  }, [view, feedId])
+
+  return {
+    entriesIds: entries,
+    hasNext,
+    hasUpdate: false,
+    refetch,
+    fetchNextPage,
+    isLoading: false,
+    isRefetching: false,
+    isReady: true,
+    isFetchingNextPage: false,
+    isFetching: false,
+    hasNextPage: page < totalPage,
+    error: null,
+  }
+}
+
+function getEntryIdsFromMultiplePlace(...entryIds: Array<string[] | undefined | null>) {
+  return entryIds.find((ids) => ids?.length) ?? []
+}
+
+export function useEntries(props?: UseEntriesProps): UseEntriesReturn {
+  const { viewId, active = true } = props || {}
+  const remoteQuery = useRemoteEntries({ viewId, active })
+  const localQuery = useLocalEntries({ viewId, active })
+  const query = remoteQuery.isReady ? remoteQuery : localQuery
+  return {
+    ...query,
+    isReady: remoteQuery.isReady,
+  }
 }
 
 export const useSelectedFeedTitle = () => {
@@ -185,9 +333,15 @@ export const useSelectedFeedTitle = () => {
   const viewDef = useViewDefinition(
     selectedFeed && selectedFeed.type === "view" ? selectedFeed.viewId : undefined,
   )
-  const feed = useFeed(selectedFeed && selectedFeed.type === "feed" ? selectedFeed.feedId : "")
-  const list = useList(selectedFeed && selectedFeed.type === "list" ? selectedFeed.listId : "")
-  const inbox = useInbox(selectedFeed && selectedFeed.type === "inbox" ? selectedFeed.inboxId : "")
+  const feed = useFeedById(selectedFeed && selectedFeed.type === "feed" ? selectedFeed.feedId : "")
+  const feedSubscription = useSubscriptionByFeedId(
+    selectedFeed && selectedFeed.type === "feed" ? selectedFeed.feedId : "",
+  )
+  const list = useListById(selectedFeed && selectedFeed.type === "list" ? selectedFeed.listId : "")
+  const inbox = useInboxById(
+    selectedFeed && selectedFeed.type === "inbox" ? selectedFeed.inboxId : "",
+  )
+  const { t } = useTranslation("common")
 
   if (!selectedFeed) {
     return ""
@@ -195,10 +349,12 @@ export const useSelectedFeedTitle = () => {
 
   switch (selectedFeed.type) {
     case "view": {
-      return viewDef?.name
+      return viewDef?.name ? t(viewDef.name) : ""
     }
     case "feed": {
-      return selectedFeed.feedId === FEED_COLLECTION_LIST ? "Collections" : (feed?.title ?? "")
+      return selectedFeed.feedId === FEED_COLLECTION_LIST
+        ? t("words.starred")
+        : feedSubscription?.title || feed?.title || ""
     }
     case "category": {
       return selectedFeed.categoryName
@@ -207,13 +363,26 @@ export const useSelectedFeedTitle = () => {
       return list?.title
     }
     case "inbox": {
-      return inbox?.title ?? "Inbox"
+      return inbox?.title ?? t("words.inbox")
     }
   }
 }
 
-export const selectTimeline = (state: SelectedTimeline) => {
+declare module "@follow/utils/event-bus" {
+  export interface CustomEvent {
+    SELECT_TIMELINE: {
+      view: SelectedTimeline
+      target: string | undefined
+    }
+  }
+}
+
+export const selectTimeline = (state: SelectedTimeline, target?: string) => {
   jotaiStore.set(selectedTimelineAtom, state)
+  EventBus.dispatch("SELECT_TIMELINE", {
+    view: state,
+    target,
+  })
 }
 
 export const selectFeed = (state: SelectedFeed) => {
@@ -223,4 +392,39 @@ export const selectFeed = (state: SelectedFeed) => {
 export const useViewDefinition = (view?: FeedViewType) => {
   const viewDef = useMemo(() => views.find((v) => v.view === view), [view])
   return viewDef
+}
+
+const TimelineSelectorDragProgressContext = createContext<SharedValue<number> | null>(null)
+
+export const TimelineSelectorDragProgressProvider = ({ children }: { children: ReactNode }) => {
+  const selectedFeed = useSelectedFeed()
+  const viewId = selectedFeed?.type === "view" ? selectedFeed.viewId : undefined
+
+  const activeViews = useViewWithSubscription()
+
+  const activeViewIndex = useMemo(
+    () => activeViews.indexOf(viewId as FeedViewType),
+    [activeViews, viewId],
+  )
+  const initialPage = activeViewIndex
+  const dragProgress = useSharedValue(initialPage)
+
+  return createElement(
+    TimelineSelectorDragProgressContext,
+    {
+      value: dragProgress,
+    },
+    children,
+  )
+}
+
+export const useTimelineSelectorDragProgress = () => {
+  const dragProgress = use(TimelineSelectorDragProgressContext)
+  if (!dragProgress) {
+    console.error(
+      "useTimelineSelectorDragProgress must be used within TimelineSelectorDragProgressProvider",
+    )
+    return makeMutable(0)
+  }
+  return dragProgress
 }

@@ -16,35 +16,56 @@ import {
   FormMessage,
 } from "@follow/components/ui/form/index.jsx"
 import { Input } from "@follow/components/ui/input/index.js"
-import { env } from "@follow/shared/env"
+import { env } from "@follow/shared/env.ssr"
+import HCaptcha from "@hcaptcha/react-hcaptcha"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useMutation } from "@tanstack/react-query"
+import { useRef } from "react"
 import { useForm } from "react-hook-form"
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router"
 import { toast } from "sonner"
 import { z } from "zod"
 
-const forgetPasswordFormSchema = z.object({
-  email: z.string().email(),
-})
+const createEmailSchema = (t: any) =>
+  z.object({
+    email: z
+      .string()
+      .min(1, t("login.forget_password.email_required"))
+      .email(t("login.forget_password.email_invalid")),
+  })
 
 export function Component() {
-  const { t } = useTranslation("external")
-  const form = useForm<z.infer<typeof forgetPasswordFormSchema>>({
-    resolver: zodResolver(forgetPasswordFormSchema),
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const captchaRef = useRef<HCaptcha>(null)
+
+  const EmailSchema = createEmailSchema(t)
+
+  const form = useForm<z.infer<typeof EmailSchema>>({
+    resolver: zodResolver(EmailSchema),
     defaultValues: {
       email: "",
     },
+    mode: "onChange",
+    delayError: 500,
   })
 
   const { isValid } = form.formState
   const updateMutation = useMutation({
-    mutationFn: async (values: z.infer<typeof forgetPasswordFormSchema>) => {
-      const res = await forgetPassword({
-        email: values.email,
-        redirectTo: `${env.VITE_WEB_URL}/reset-password`,
-      })
+    mutationFn: async (values: z.infer<typeof EmailSchema>) => {
+      const response = await captchaRef.current?.execute({ async: true })
+      const res = await forgetPassword(
+        {
+          email: values.email,
+          redirectTo: `${env.VITE_WEB_URL}/reset-password`,
+        },
+        {
+          headers: {
+            "x-token": `hc:${response?.response}`,
+          },
+        },
+      )
       if (res.error) {
         throw new Error(res.error.message)
       }
@@ -57,11 +78,9 @@ export function Component() {
     },
   })
 
-  function onSubmit(values: z.infer<typeof forgetPasswordFormSchema>) {
+  function onSubmit(values: z.infer<typeof EmailSchema>) {
     updateMutation.mutate(values)
   }
-
-  const navigate = useNavigate()
 
   return (
     <div className="flex h-full items-center justify-center">
@@ -98,8 +117,13 @@ export function Component() {
                   </FormItem>
                 )}
               />
+              <HCaptcha ref={captchaRef} sitekey={env.VITE_HCAPTCHA_SITE_KEY} size="invisible" />
               <div className="text-right">
-                <Button disabled={!isValid} type="submit" isLoading={updateMutation.isPending}>
+                <Button
+                  disabled={!isValid || updateMutation.isPending}
+                  type="submit"
+                  isLoading={updateMutation.isPending}
+                >
                   {t("login.submit")}
                 </Button>
               </div>

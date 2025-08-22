@@ -1,10 +1,10 @@
 {
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
   "[javascript][javascriptreact][typescript][typescriptreact][json][jsonc]": {
-    "editor.formatOnSave": true,
     "editor.codeActionsOnSave": {
       "source.fixAll.eslint": "explicit"
-    },
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
+    }
   },
   "files.associations": {
     "*.css": "tailwindcss"
@@ -16,6 +16,7 @@
     ["[a-zA-Z]+[cC]lass[nN]ame[\"'`]?:\\s*[\"'`]([^\"'`]*)[\"'`]", "([^\"'`]*)"],
     ["[a-zA-Z]+[cC]lass[nN]ame\\s*=\\s*[\"'`]([^\"'`]*)[\"'`]", "([^\"'`]*)"]
   ],
+  "github.copilot.chat.codeGeneration.useInstructionFiles": true,
   "tailwindCSS.experimental.configFile": {
     "apps/mobile/tailwind.config.ts": "apps/mobile/**",
     "apps/ssr/tailwind.config.ts": "apps/ssr/**",
@@ -76,5 +77,9 @@
   "i18n-ally.namespace": true,
   "i18n-ally.pathMatcher": "{namespaces}/{locale}.json",
   "lldb.library": "/Applications/Xcode.app/Contents/SharedFrameworks/LLDB.framework/Versions/A/LLDB",
-  "lldb.launch.expressions": "native"
+  "lldb.launch.expressions": "native",
+  "[swift]": {
+    "editor.defaultFormatter": "swiftlang.swift-vscode"
+  },
+  "npm.exclude": "**/packages/**"
 }

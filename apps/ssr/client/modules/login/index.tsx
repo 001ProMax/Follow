@@ -1,5 +1,6 @@
 import { UserAvatar } from "@client/components/ui/user-avatar"
-import { createSession, loginHandler, signOut, twoFactor } from "@client/lib/auth"
+import { loginHandler, oneTimeToken, signOut, twoFactor } from "@client/lib/auth"
+import { openInFollowApp } from "@client/lib/helper"
 import { queryClient } from "@client/lib/query-client"
 import { useSession } from "@client/query/auth"
 import { useAuthProviders } from "@client/query/users"
@@ -16,9 +17,11 @@ import {
 } from "@follow/components/ui/form/index.jsx"
 import { Input } from "@follow/components/ui/input/index.js"
 import { LoadingCircle } from "@follow/components/ui/loading/index.jsx"
-import { authProvidersConfig } from "@follow/constants"
+import { useIsDark } from "@follow/hooks"
 import { DEEPLINK_SCHEME } from "@follow/shared/constants"
+import { env } from "@follow/shared/env.ssr"
 import { cn } from "@follow/utils/utils"
+import HCaptcha from "@hcaptcha/react-hcaptcha"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useForm } from "react-hook-form"
@@ -41,7 +44,7 @@ export function Login() {
 
   const isAuthenticated = status === "authenticated"
 
-  const { t } = useTranslation("external")
+  const { t } = useTranslation()
 
   useEffect(() => {
     if (provider && !isCredentialProvider && status === "unauthenticated") {
@@ -51,18 +54,27 @@ export function Login() {
   }, [isCredentialProvider, provider, status])
 
   const getCallbackUrl = useCallback(async () => {
-    const { data } = await createSession()
+    const { data } = await oneTimeToken.generate()
     if (!data) return null
     return {
-      url: `${DEEPLINK_SCHEME}auth?ck=${data.ck}&userId=${data.userId}`,
-      userId: data.userId,
+      url: `auth?token=${data.token}`,
     }
   }, [])
+
+  const [openFailed, setOpenFailed] = useState(false)
+  const [callbackUrl, setCallbackUrl] = useState<string>()
+  const callbackUrlWithScheme = callbackUrl ? `${DEEPLINK_SCHEME}${callbackUrl}` : undefined
 
   const handleOpenApp = useCallback(async () => {
     const callbackUrl = await getCallbackUrl()
     if (!callbackUrl) return
-    window.open(callbackUrl.url, "_top")
+    setCallbackUrl(callbackUrl.url)
+    openInFollowApp({
+      deeplink: callbackUrl.url,
+      fallback: () => {
+        setOpenFailed(true)
+      },
+    })
   }, [getCallbackUrl])
 
   const onceRef = useRef(false)
@@ -73,12 +85,17 @@ export function Login() {
     onceRef.current = true
   }, [handleOpenApp, isAuthenticated])
 
+  const navigate = useNavigate()
+
+  const [isEmail, setIsEmail] = useState(false)
+  const isDark = useIsDark()
+
   const LoginOrStatusContent = useMemo(() => {
     switch (true) {
       case isAuthenticated: {
         return (
-          <div className="flex w-full flex-col items-center justify-center gap-10 px-4">
-            <div className="relative flex items-center justify-center">
+          <div className="mt-4 flex w-full flex-col items-center justify-center px-4">
+            <div className="relative flex items-center justify-center gap-10">
               <UserAvatar className="gap-4 px-10 py-4 text-2xl" />
               <div className="absolute right-0">
                 <Button
@@ -92,110 +109,133 @@ export function Login() {
                 </Button>
               </div>
             </div>
-            <h2 className="text-center">
-              {t("redirect.successMessage", { app_name: APP_NAME })} <br />
-              <br />
+            <p className="mt-4 text-center">
+              {t("redirect.successMessage", { app_name: APP_NAME })}
+            </p>
+            <p className="text-text-secondary mt-2 text-center text-sm">
               {t("redirect.instruction", { app_name: APP_NAME })}
-            </h2>
-            <div className="center flex flex-col gap-20 sm:flex-row">
+            </p>
+            <div className="center mt-8 flex flex-col gap-4 sm:flex-row">
               <Button
-                variant="text"
-                className="h-14 text-base"
-                onClick={() => {
-                  window.location.href = "/"
-                }}
+                variant="primary"
+                buttonClassName="h-12 !rounded-full px-10 text-lg"
+                onClick={handleOpenApp}
               >
-                {t("redirect.continueInBrowser")}
-              </Button>
-
-              <Button className="h-14 !rounded-full px-5 text-lg" onClick={handleOpenApp}>
                 {t("redirect.openApp", { app_name: APP_NAME })}
               </Button>
             </div>
+            {openFailed && callbackUrlWithScheme && (
+              <div className="text-text mt-8 w-[31rem] space-y-2 text-center text-sm">
+                <p className="text-base">
+                  <Trans
+                    t={t}
+                    i18nKey="login.no_client"
+                    components={{
+                      weblink: <a href="/" className="text-accent" />,
+                    }}
+                  />
+                </p>
+                <p>{t("login.enter_token")}</p>
+                <p className="bg-fill-tertiary flex items-center justify-center gap-4 rounded-lg p-3">
+                  <span className="blur-sm hover:blur-none">{callbackUrlWithScheme}</span>
+                  <i
+                    className="i-mgc-copy-2-cute-re size-4 cursor-pointer"
+                    onClick={() => {
+                      navigator.clipboard.writeText(callbackUrlWithScheme)
+                    }}
+                  />
+                </p>
+              </div>
+            )}
           </div>
         )
       }
       default: {
-        if (!authProviders?.credential) {
-          return (
-            <div className="flex w-[350px] max-w-full flex-col gap-3">
-              {Object.entries(authProviders || [])
-                .filter(([key]) => key !== "credential")
-                .map(([key, provider]) => (
-                  <Button
-                    key={key}
-                    buttonClassName={cn(
-                      "h-[48px] w-full rounded-[8px] font-sans text-base text-white hover:!bg-black/80 focus:!border-black/80 focus:!ring-black/80",
-                      authProvidersConfig[key]?.buttonClassName,
-                    )}
-                    onClick={() => {
-                      loginHandler(key, "app")
-                    }}
-                  >
-                    <i className={cn("mr-2 text-xl", authProvidersConfig[key]?.iconClassName)} />{" "}
-                    {t("login.continueWith", {
-                      provider: provider.name,
-                    })}
-                  </Button>
-                ))}
-            </div>
-          )
-        } else {
-          return (
-            <>
+        return (
+          <>
+            {isEmail ? (
               <LoginWithPassword />
-              <div className="mt-2 w-full space-y-2">
-                <div className="flex items-center justify-center">
-                  <Divider className="flex-1" />
-                  <p className="text-muted-foreground px-4 text-center text-sm">{t("login.or")}</p>
-                  <Divider className="flex-1" />
-                </div>
-              </div>
-              <div className="flex items-center justify-center gap-4">
-                {Object.entries(authProviders || [])
-                  .filter(([key]) => key !== "credential")
-                  .map(([key, provider]) => (
-                    <MotionButtonBase
-                      key={key}
-                      onClick={() => {
+            ) : (
+              <div className="mb-3 flex flex-col items-center justify-center gap-4">
+                {Object.entries(authProviders || []).map(([key, provider]) => (
+                  <MotionButtonBase
+                    key={key}
+                    onClick={() => {
+                      if (key === "credential") {
+                        setIsEmail(true)
+                      } else {
                         loginHandler(key, "app")
-                      }}
-                    >
-                      <div
-                        className="center hover:bg-muted inline-flex rounded-full border p-2.5 duration-200 [&_svg]:size-6"
-                        dangerouslySetInnerHTML={{
-                          __html: provider.icon,
-                        }}
-                        style={{
-                          color: provider.color,
-                        }}
-                      />
-                    </MotionButtonBase>
-                  ))}
+                      }
+                    }}
+                    className="center hover:bg-material-medium relative w-full gap-2 rounded-xl border p-2.5 pl-5 font-semibold duration-200"
+                  >
+                    <img
+                      className={cn(
+                        "absolute left-9 h-5",
+                        !provider.iconDark64 &&
+                          "dark:brightness-[0.85] dark:hue-rotate-180 dark:invert",
+                      )}
+                      src={isDark ? provider.iconDark64 || provider.icon64 : provider.icon64}
+                    />
+                    <span>{t("login.continueWith", { provider: provider.name })}</span>
+                  </MotionButtonBase>
+                ))}
               </div>
-            </>
-          )
-        }
+            )}
+            <Divider />
+            {isEmail ? (
+              <div className="cursor-pointer pb-2 text-center" onClick={() => setIsEmail(false)}>
+                Back
+              </div>
+            ) : (
+              <div
+                className="cursor-pointer pb-2 text-center"
+                onClick={() => {
+                  navigate("/register")
+                }}
+              >
+                <Trans
+                  t={t}
+                  i18nKey="login.no_account"
+                  components={{
+                    strong: <span className="text-accent" />,
+                  }}
+                />
+              </div>
+            )}
+          </>
+        )
       }
     }
-  }, [authProviders, handleOpenApp, isAuthenticated, refetch, t])
+  }, [
+    authProviders,
+    handleOpenApp,
+    isAuthenticated,
+    refetch,
+    t,
+    isEmail,
+    navigate,
+    openFailed,
+    callbackUrl,
+    isDark,
+  ])
   const Content = useMemo(() => {
     switch (true) {
       case redirecting: {
         return <div className="center">{t("login.redirecting")}</div>
       }
       default: {
-        return <div className="flex flex-col gap-3">{LoginOrStatusContent}</div>
+        return <div className="flex min-w-80 flex-col gap-3">{LoginOrStatusContent}</div>
       }
     }
   }, [LoginOrStatusContent, redirecting, t])
 
   return (
-    <div className="flex h-screen w-full flex-col items-center justify-center">
+    <div className="flex w-full flex-col items-center justify-center">
       <Logo className="size-16" />
 
       {!isAuthenticated && !isLoading && (
-        <h1 className="mb-6 mt-8 text-2xl">
+        <h1 className="my-8 text-3xl">
           {t("login.logInTo")} <b>{` ${APP_NAME}`}</b>
         </h1>
       )}
@@ -212,7 +252,7 @@ const formSchema = z.object({
 })
 
 function LoginWithPassword() {
-  const { t } = useTranslation("external")
+  const { t } = useTranslation()
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -221,33 +261,56 @@ function LoginWithPassword() {
     },
   })
   const [needTwoFactor, setNeedTwoFactor] = useState(false)
+  const [isButtonLoading, setIsButtonLoading] = useState(false)
 
-  const { isSubmitting } = form.formState
-  const navigate = useNavigate()
+  const captchaRef = useRef<HCaptcha>(null)
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
-    if (needTwoFactor && values.code) {
-      const res = await twoFactor.verifyTotp({ code: values.code })
+    setIsButtonLoading(true)
+    try {
+      if (needTwoFactor && values.code) {
+        const res = await twoFactor.verifyTotp({ code: values.code })
+        if (res?.error) {
+          toast.error(res.error.message)
+          setIsButtonLoading(false)
+        } else {
+          queryClient.invalidateQueries({ queryKey: ["auth", "session"] })
+        }
+        return
+      }
+
+      const response = await captchaRef.current?.execute({ async: true })
+      if (!response?.response) {
+        setIsButtonLoading(false)
+        return
+      }
+
+      const res = await loginHandler("credential", "app", {
+        ...values,
+        headers: {
+          "x-token": `hc:${response?.response}`,
+        },
+      })
+
       if (res?.error) {
         toast.error(res.error.message)
+        setIsButtonLoading(false)
+        return
+      }
+
+      if ((res?.data as any)?.twoFactorRedirect) {
+        setNeedTwoFactor(true)
+        form.setValue("code", "")
+        setTimeout(() => form.setFocus("code"), 0)
+        setIsButtonLoading(false)
+        return
       } else {
         queryClient.invalidateQueries({ queryKey: ["auth", "session"] })
       }
-      return
-    }
-
-    const res = await loginHandler("credential", "app", values)
-    if (res?.error) {
-      toast.error(res.error.message)
-      return
-    }
-    if ((res?.data as any)?.twoFactorRedirect) {
-      setNeedTwoFactor(true)
-      form.setValue("code", "")
-      form.setFocus("code")
-      return
-    } else {
-      queryClient.invalidateQueries({ queryKey: ["auth", "session"] })
+    } catch (error) {
+      console.error("Login error:", error)
+      toast.error(t("login.errors.unknown"))
+      setIsButtonLoading(false)
     }
   }
 
@@ -261,7 +324,7 @@ function LoginWithPassword() {
             <FormItem>
               <FormLabel>{t("login.email")}</FormLabel>
               <FormControl>
-                <Input type="email" {...field} />
+                <Input type="email" {...field} disabled={isButtonLoading || needTwoFactor} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -282,7 +345,7 @@ function LoginWithPassword() {
                 </Link>
               </FormLabel>
               <FormControl>
-                <Input type="password" {...field} />
+                <Input type="password" {...field} disabled={isButtonLoading || needTwoFactor} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -296,27 +359,24 @@ function LoginWithPassword() {
               <FormItem>
                 <FormLabel>{t("login.two_factor.code")}</FormLabel>
                 <FormControl>
-                  <Input type="text" {...field} />
+                  <Input type="text" {...field} disabled={isButtonLoading} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
         )}
-        <Button type="submit" buttonClassName="!mt-3 w-full" isLoading={isSubmitting} size="lg">
-          {t("login.continueWith", { provider: t("words.email") })}
-        </Button>
+        <HCaptcha ref={captchaRef} sitekey={env.VITE_HCAPTCHA_SITE_KEY} size="invisible" />
         <Button
-          type="button"
-          buttonClassName="!mt-3"
-          className="w-full"
-          variant="outline"
-          onClick={() => {
-            navigate("/register")
-          }}
+          type="submit"
+          buttonClassName="!mt-3 w-full"
+          isLoading={isButtonLoading}
           size="lg"
+          disabled={isButtonLoading}
         >
-          <Trans ns="external" i18nKey="login.signUp" />
+          {needTwoFactor
+            ? t("login.two_factor.verify")
+            : t("login.continueWith", { provider: t("words.email") })}
         </Button>
       </form>
     </Form>

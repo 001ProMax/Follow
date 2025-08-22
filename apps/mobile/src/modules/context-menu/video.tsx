@@ -1,22 +1,29 @@
+import { FeedViewType } from "@follow/constants"
+import { useIsEntryStarred } from "@follow/store/collection/hooks"
+import { collectionSyncService } from "@follow/store/collection/store"
+import { useEntry } from "@follow/store/entry/hooks"
+import { unreadSyncService } from "@follow/store/unread/store"
 import type { PropsWithChildren } from "react"
-import { Clipboard, Share } from "react-native"
+import { useTranslation } from "react-i18next"
+import { Share } from "react-native"
 
 import { ContextMenu } from "@/src/components/ui/context-menu"
-import { openLink } from "@/src/lib/native"
 import { toast } from "@/src/lib/toast"
-import { useSelectedView } from "@/src/modules/screen/atoms"
-import { useIsEntryStarred } from "@/src/store/collection/hooks"
-import { collectionSyncService } from "@/src/store/collection/store"
-import { useEntry } from "@/src/store/entry/hooks"
 
 type VideoContextMenuProps = PropsWithChildren<{
   entryId: string
 }>
 
 export const VideoContextMenu = ({ entryId, children }: VideoContextMenuProps) => {
-  const entry = useEntry(entryId)
+  const { t } = useTranslation()
+  const entry = useEntry(entryId, (state) => ({
+    read: state.read,
+    feedId: state.feedId,
+    title: state.title,
+    url: state.url,
+  }))
   const feedId = entry?.feedId
-  const view = useSelectedView()
+
   const isEntryStarred = useIsEntryStarred(entryId)
 
   if (!entry) {
@@ -28,20 +35,36 @@ export const VideoContextMenu = ({ entryId, children }: VideoContextMenuProps) =
       <ContextMenu.Trigger>{children}</ContextMenu.Trigger>
 
       <ContextMenu.Content>
-        {feedId && view !== undefined && (
+        <ContextMenu.Item
+          key="MarkAsRead"
+          onSelect={() => {
+            entry.read
+              ? unreadSyncService.markEntryAsUnread(entryId)
+              : unreadSyncService.markEntryAsRead(entryId)
+          }}
+        >
+          <ContextMenu.ItemTitle>
+            {entry.read ? t("operation.mark_as_unread") : t("operation.mark_as_read")}
+          </ContextMenu.ItemTitle>
+          <ContextMenu.ItemIcon
+            ios={{
+              name: entry.read ? "circle.fill" : "checkmark.circle",
+            }}
+          />
+        </ContextMenu.Item>
+        {feedId && (
           <ContextMenu.Item
             key="Star"
             onSelect={() => {
               if (isEntryStarred) {
-                collectionSyncService.unstarEntry(entryId)
-                toast.info("Unstarred")
+                collectionSyncService.unstarEntry({ entryId })
+                toast.success("Unstarred")
               } else {
                 collectionSyncService.starEntry({
-                  feedId,
                   entryId,
-                  view,
+                  view: FeedViewType.Videos,
                 })
-                toast.info("Starred")
+                toast.success("Starred")
               }
             }}
           >
@@ -50,40 +73,12 @@ export const VideoContextMenu = ({ entryId, children }: VideoContextMenuProps) =
                 name: isEntryStarred ? "star.slash" : "star",
               }}
             />
-            <ContextMenu.ItemTitle>{isEntryStarred ? "Unstar" : "Star"}</ContextMenu.ItemTitle>
+            <ContextMenu.ItemTitle>
+              {isEntryStarred ? t("operation.unstar") : t("operation.star")}
+            </ContextMenu.ItemTitle>
           </ContextMenu.Item>
         )}
 
-        <ContextMenu.Item
-          key="Open Link"
-          onSelect={() => {
-            if (!entry.url) return
-            openLink(entry.url)
-          }}
-        >
-          <ContextMenu.ItemIcon
-            ios={{
-              name: "link",
-            }}
-          />
-          <ContextMenu.ItemTitle>Open Link</ContextMenu.ItemTitle>
-        </ContextMenu.Item>
-
-        <ContextMenu.Item
-          key="Copy Link"
-          onSelect={async () => {
-            if (!entry.url) return
-            Clipboard.setString(entry.url)
-            toast.success("Link copied to clipboard")
-          }}
-        >
-          <ContextMenu.ItemIcon
-            ios={{
-              name: "document.on.document",
-            }}
-          />
-          <ContextMenu.ItemTitle>Copy Link</ContextMenu.ItemTitle>
-        </ContextMenu.Item>
         <ContextMenu.Item
           key="Share"
           onSelect={async () => {
@@ -101,7 +96,7 @@ export const VideoContextMenu = ({ entryId, children }: VideoContextMenuProps) =
               name: "square.and.arrow.up",
             }}
           />
-          <ContextMenu.ItemTitle>Share</ContextMenu.ItemTitle>
+          <ContextMenu.ItemTitle>{t("operation.share")}</ContextMenu.ItemTitle>
         </ContextMenu.Item>
       </ContextMenu.Content>
     </ContextMenu.Root>
